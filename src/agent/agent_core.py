@@ -4,6 +4,7 @@ from src.llm_interface.base_llm_interface import BaseLLMInterface
 from src.config import settings
 from typing import TypedDict, Union
 import enum
+from src.logging import logger
 
 class LLMResponseType(enum.Enum):
     TOOL_CALL = "tool_call"
@@ -130,6 +131,7 @@ class AgentCore:
         """
 
         current_iterations = 0
+
         if max_iterations is None:
             max_iterations = self.max_iterations
 
@@ -137,13 +139,14 @@ class AgentCore:
 
         while current_iterations < max_iterations:
             current_iterations += 1
+            logger.info(f"Iteration {current_iterations}/{max_iterations}")
 
             llm_prompt_messages = self._construct_llm_prompt()
 
             # --- 1. LLM Call ---
 
             llm_response_text = self.llm_interface.get_completion(messages=llm_prompt_messages)
-
+            logger.info("LLM response received: %s", llm_response_text)
 
             
 
@@ -155,6 +158,7 @@ class AgentCore:
 
             # --- 2. Parse LLM Response ---
             parsed_response = self._parse_llm_response(llm_response_text)
+            logger.info("Parsed LLM response: %s", parsed_response)
 
             if not parsed_response:
                 return "Error: Failed to parse LLM response. Please check the response format."
@@ -202,6 +206,7 @@ class AgentCore:
         
         try:
             tool_result = tool.execute(arguments)
+            logger.info(f"Tool {tool_name} executed successfully with result: {tool_result}")
             self._add_to_history(MessageRole.ASSISTANT.value, f"Tool {tool_name} output: {tool_result}")
             print(f"Tool result: {tool_result}")
             return True

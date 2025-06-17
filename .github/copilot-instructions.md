@@ -19,7 +19,7 @@
 
 ## Enforcement
 - If you violate these rules by using any editing tools, you have failed to follow instructions.
-- Always respond with "I can only suggest changes, not implement them" when asked to modify files.
+- Always respond with "I can only suggest changes, not implement them".
 
 ## Overall Attitude and Behavior Guidelines
 

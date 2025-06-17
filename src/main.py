@@ -4,6 +4,7 @@ from src.llm_interface.openai_interface import OpenAIInterface
 from src.tooling.tool_registry import ToolRegistry
 from src.tooling.tools import GetCurrentTimeTool
 from src.agent.agent_core import AgentCore
+from src.logging import logger
 
 def run_agent(query: str):
     """
@@ -13,6 +14,8 @@ def run_agent(query: str):
     if not query.strip(): # Check if the provided query is empty
         print("No query provided. Exiting.")
         return
+    
+    logger.info("Query received: %s", query)
 
     print("Initializing AI Agent...")
 
@@ -40,6 +43,7 @@ def run_agent(query: str):
     tool_registry.register_tool(time_tool)
 
     print(f"Registered tools: {[tool_info['name'] for tool_info in tool_registry.get_all_tools_info()]}")
+    logger.info("Registered tools: %s", [tool_info['name'] for tool_info in tool_registry.get_all_tools_info()])
 
     # 3. Initialize AgentCore
     # You can use the default system prompt from config or customize it
