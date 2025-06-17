@@ -56,9 +56,7 @@ def run_agent(query: str):
 
     try:
         agent_response = agent.execute_task(query)
-        # The agent_response is already printed by AgentCore for now,
-        # but you might want to handle its display here for more control.
-        # print(f"\nAgent Response:\n{agent_response}")
+        print(f"\nAgent Response:\n{agent_response}")
     except Exception as e:
         print(f"An error occurred during task execution: {e}")
         # Optionally, re-initialize agent or clear history for a fresh start

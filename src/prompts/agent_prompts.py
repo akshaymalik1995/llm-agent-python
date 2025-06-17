@@ -14,13 +14,14 @@ Use one of these exact response formats:
 {
     "type": "tool_call",
     "thought": "Your reasoning for using this tool",
-    "tool_to_use": "exact_tool_name",
+    "tool_name": "exact_tool_name",
     "arguments": {"param1": "value1", "param2": "value2"}
 }
 
 2. To provide a final answer:
 {
-    "type": "final_answer", 
+    "type": "answer",
+    "content": "Your answer to the user's query" 
     "thought": "Your reasoning for this answer",
     "answer": "Your complete response to the user"
 }

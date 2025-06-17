@@ -76,7 +76,7 @@ class AgentCore:
         Parses the LLM's JSON response into a typed structure.
         Returns None if parsing fails or if the response is not in expected format.
         """
-        if not response_text or response_text.strip():
+        if not response_text or not response_text.strip():
             # If the response is empty or just whitespace, return a default answer
             print("Error: LLM response is empty or whitespace.")
             return None
@@ -202,7 +202,7 @@ class AgentCore:
         
         try:
             tool_result = tool.execute(arguments)
-            self._add_to_history(MessageRole.ASSISTANT, f"Tool {tool_name} output: {tool_result}")
+            self._add_to_history(MessageRole.ASSISTANT.value, f"Tool {tool_name} output: {tool_result}")
             print(f"Tool result: {tool_result}")
             return True
         except Exception as e:
