@@ -2,7 +2,7 @@
 from src.config import settings
 from src.llm_interface.openai_interface import OpenAIInterface
 from src.tooling.tool_registry import ToolRegistry
-from src.tooling.tools import GetCurrentTimeTool
+from src.tooling.tools import GetCurrentTimeTool, ListFilesTool
 from src.agent.agent_core import AgentCore
 from src.logging import logger
 
@@ -40,7 +40,9 @@ def run_agent(query: str):
     tool_registry = ToolRegistry()
 
     time_tool = GetCurrentTimeTool()
+    list_files_tool = ListFilesTool()
     tool_registry.register_tool(time_tool)
+    tool_registry.register_tool(list_files_tool)
 
     print(f"Registered tools: {[tool_info['name'] for tool_info in tool_registry.get_all_tools_info()]}")
     logger.info("Registered tools: %s", [tool_info['name'] for tool_info in tool_registry.get_all_tools_info()])

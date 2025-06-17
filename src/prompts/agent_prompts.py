@@ -23,7 +23,6 @@ Use one of these exact response formats:
     "type": "answer",
     "content": "Your answer to the user's query" 
     "thought": "Your reasoning for this answer",
-    "answer": "Your complete response to the user"
 }
 """.strip()
 
