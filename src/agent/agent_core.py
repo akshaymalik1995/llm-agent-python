@@ -59,6 +59,9 @@ class AgentCore:
         # Initialize tokenizer (using GPT-4 tokenizer as standard)
         self.tokenizer = tiktoken.encoding_for_model("gpt-4")
 
+        # Initialize state for the agent to update across iterations
+        self.state = {}
+
     def _format_system_prompt(self, template: str) -> str:
         """Formats the system prompt template with dynamic information like tool schemas."""
         tool_schemas_json = json.dumps(self.tool_registry.get_all_tools_info(), indent=2)
@@ -96,6 +99,16 @@ class AgentCore:
             if "type" not in parsed:
                 print(f"Error: LLM response does not contain 'type' field: {parsed}")
                 return None
+            
+            # First, parse the state if it exists
+            if "state" in parsed:
+                if not isinstance(parsed["state"], dict):
+                    print(f"Error: LLM response 'state' field is not a valid JSON object: {parsed['state']}")
+                    return None
+                self.state.update(parsed["state"])
+                # Add state to conversation history
+                logger.info(f"State updated: {json.dumps(self.state, indent=2)}")
+                self._add_to_history(MessageRole.SYSTEM.value, f"State updated: {json.dumps(self.state, indent=2)}")
             
             response_type = parsed["type"]
 
