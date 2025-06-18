@@ -2,254 +2,501 @@ from src.tooling.tool_registry import ToolRegistry
 import json
 from src.llm_interface.base_llm_interface import BaseLLMInterface
 from src.config import settings
-from typing import TypedDict, Union
-import enum
+from src.agent.types import PlanStep, ExecutionPlan
+from src.prompts.planning_prompt import PLANNING_PROMPT
+from typing import Optional, Any
 from src.logging import logger
 import tiktoken
-
-class LLMResponseType(enum.Enum):
-    TOOL_CALL = "tool_call"
-    ANSWER = "answer"
-
-class ToolCallResponse(TypedDict):
-    type: LLMResponseType.TOOL_CALL
-    thought: str
-    tool_name: str
-    arguments: dict
-
-class AnswerResponse(TypedDict):
-    type: LLMResponseType.ANSWER
-    content: str
+import re
+import enum
 
 class MessageRole(enum.Enum):
     USER = "user"
     ASSISTANT = "assistant"
     SYSTEM = "system"
 
-LLMResponse = Union[ToolCallResponse, AnswerResponse]
-
-class MessageDict(TypedDict):
-    role: MessageRole
-    content: str
-
+class MessageDict:
+    def __init__(self, role: MessageRole, content: str):
+        self.role = role
+        self.content = content
 
 class AgentCore:
-    def __init__(self, llm_interface: BaseLLMInterface, tool_registry: ToolRegistry, system_prompt_template: str | None = None):
+    def __init__(self, llm_interface: BaseLLMInterface, tool_registry: ToolRegistry):
         """
-        Initializes the AI Agent
+        Initializes the AI Agent with planning-based execution.
 
         Args:
             llm_interface: An object responsible for interacting with the LLM.
-                           This could be a wrapper around an API client or a local model.
             tool_registry: An instance of ToolRegistry containing available tools.
-            system_prompt: A base system prompt to guide the LLM's behavior.
         """
-
         self.llm_interface = llm_interface
         self.tool_registry = tool_registry
-        self.conversation_history: list[MessageDict] = []  # Stores conversation history as a list of dicts
-        self.max_iterations = settings.MAX_AGENT_ITERATIONS # Default maximum iterations to prevent infinite loops
+        self.conversation_history: list[MessageDict] = []
 
-        self.system_prompt_template = system_prompt_template or settings.DEFAULT_SYSTEM_PROMPT_TEMPLATE
-
-        self.max_tokens = 25000  # Your target limit
-        self.token_buffer = 2000  # Safety buffer for response generation
+        # Token Management
+        self.max_tokens = 25000
+        self.token_buffer = 2000
         self.effective_max_tokens = self.max_tokens - self.token_buffer
-        
-        # Initialize tokenizer (using GPT-4 tokenizer as standard)
         self.tokenizer = tiktoken.encoding_for_model("gpt-4")
 
-        # Initialize state for the agent to update across iterations
-        self.state = {}
+        # Execution state
+        self.current_plan: Optional[ExecutionPlan] = None
+        self.jumped = False # Flag for tracking jumps in plan execution
 
-    def _format_system_prompt(self, template: str) -> str:
-        """Formats the system prompt template with dynamic information like tool schemas."""
-        tool_schemas_json = json.dumps(self.tool_registry.get_all_tools_info(), indent=2)
-        return template.replace("{tool_schemas_json}", tool_schemas_json)
-
-    def _add_to_history(self, role: MessageRole, content: str):
-        """Adds a message to the conversation history."""
-        self.conversation_history.append({"role": role, "content": content})
-
-    def _construct_llm_prompt(self) -> list[dict]:
+    def execute_task(self, user_query:str, max_iterations: Optional[int] = None) -> str:
         """
-        Constructs the full prompt for the LLM, including system prompt
-        and conversation history.
-        The format (list of dicts) depends on the LLM API (e.g., OpenAI's chat format).
-        """
-        messages = [{"role": MessageRole.SYSTEM.value, "content": self._format_system_prompt(self.system_prompt_template)}]
-
+        Main entry point for task execution using planning-based approach.
         
-        messages.extend(self.conversation_history) # TODO: Explore options to truncate or summarize the history
-        return messages
-
-    def _parse_llm_response(self, response_text: str) -> dict:
+        Args:
+            user_query: The user's task request
+            max_iterations: Override for maximum iterations (uses plan estimate if None)
+            
+        Returns:
+            Final result or error message
         """
-        Parses the LLM's JSON response into a typed structure.
-        Returns None if parsing fails or if the response is not in expected format.
-        """
-        if not response_text or not response_text.strip():
-            # If the response is empty or just whitespace, return a default answer
-            print("Error: LLM response is empty or whitespace.")
-            return None
         try:
-            parsed = json.loads(response_text.strip())
+            # Phase 1: Create execution plan
+            logger.info(f"Starting task: {user_query}")
+            self._add_to_history(MessageRole.USER.value, user_query)
+
+            plan_data = self._create_execution_plan(user_query)
+
+            if not plan_data:
+                return "Error: Failed to create execution plan"
             
-            # Validate response structure
-            if "type" not in parsed:
-                print(f"Error: LLM response does not contain 'type' field: {parsed}")
+            # Phase 2: Execute the plan
+            result = self._execute_plan(plan_data, max_iterations)
+            return result
+
+        except Exception as e:
+            logger.error(f"Task execution failed: {e}")
+            return f"Error during task execution: {str(e)}"
+        
+    def _create_execution_plan(self, user_query: str) -> Optional[dict]:
+        """
+        Creates an execution plan by calling the LLM with planning prompt.
+        
+        Returns:
+            Parsed plan data or None if planning failed
+        """
+
+        logger.info("Creating execution plan...")
+
+        # Format planning prompt with available tools
+        tool_schemas_json = json.dumps(self.tool_registry.get_all_tools_info(), indent=2)
+        planning_prompt = PLANNING_PROMPT.replace("{tool_schemas_json}", tool_schemas_json)
+
+        # Construct planning messages
+        messages = [
+            {"role": MessageRole.SYSTEM.value, "content": planning_prompt},
+            {"role": "user", "content": f"Create an execution plan for: {user_query}"}
+        ]
+
+        try:
+            # get plan from LLM
+            response = self.llm_interface.get_completion(messages=messages, force_json=True)
+            logger.info(f"Planning response received: {response}")
+
+            # Parse the plan
+            plan_data = json.loads(response.strip())
+
+            # Validate plan structure
+            if not self._validate_plan_structure(plan_data):
+                logger.error("Invalid plan structure received")
                 return None
             
-            # First, parse the state if it exists
-            if "state" in parsed:
-                if not isinstance(parsed["state"], dict):
-                    print(f"Error: LLM response 'state' field is not a valid JSON object: {parsed['state']}")
-                    return None
-                self.state.update(parsed["state"])
-                # Add state to conversation history
-                logger.info(f"State updated: {json.dumps(self.state, indent=2)}")
-                self._add_to_history(MessageRole.SYSTEM.value, f"State updated: {json.dumps(self.state, indent=2)}")
-            
-            response_type = parsed["type"]
-
-            if response_type == LLMResponseType.TOOL_CALL.value:
-                # Validate tool call response structure
-                required_fields = {"type", "thought", "tool_name", "arguments"}
-                if not required_fields.issubset(parsed.keys()):
-                    print(f"Error: LLM tool call response is missing required fields: {parsed}")
-                    return None
-                return ToolCallResponse(parsed)
-            
-            elif response_type == LLMResponseType.ANSWER.value:
-                # Validate answer response structure
-                if "content" not in parsed:
-                    print(f"Error: LLM answer response is missing 'content' field: {parsed}")
-                    return None
-                return AnswerResponse(parsed)
-            else:
-                print(f"Error: LLM response has unknown type '{response_type}': {parsed}")
-                return None
-
-        except json.JSONDecodeError:
-            print(f"Error: Failed to parse LLM response as JSON: {response_text}")
-            print(f"Raw response: {response_text}")
+            logger.info(f"Plan created successfully with {len(plan_data['plan'])} steps")
+            return plan_data
+        
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse planning response as JSON: {e}")
             return None
         except Exception as e:
-            print(f"Error: Unexpected error while parsing LLM response: {e}")
+            logger.error(f"Planning failed: {e}")
             return None
         
-    
-    def execute_task(self, user_query: str, max_iterations: int = None) -> str:
-        """
-        Manages the iterative execution of a task.
-
-        Args:
-            user_query: The initial query or task from the user.
-            max_iterations: Override for the maximum number of agent iterations.
-
-        Returns:
-            The final result or response from the agent.
-        """
-
-        current_iterations = 0
-
-        if max_iterations is None:
-            max_iterations = self.max_iterations
-
-        self._add_to_history(MessageRole.USER.value, user_query)
-
-        while current_iterations < max_iterations:
-            current_iterations += 1
-            logger.info(f"Iteration {current_iterations}/{max_iterations}")
-
-            llm_prompt_messages = self._construct_llm_prompt()
-
-            prompt_tokens = self._count_message_tokens(llm_prompt_messages)
-            logger.info(f"Sending prompt with {prompt_tokens} tokens to LLM")
-
-            # --- 1. LLM Call ---
-
-            llm_response_text = self.llm_interface.get_completion(messages=llm_prompt_messages)
-            logger.info("LLM response received: %s", llm_response_text)
-
-            
-
-
-            if not llm_response_text:
-                return "Error: LLM did not provide a response."
-            
-             
-
-            # --- 2. Parse LLM Response ---
-            parsed_response = self._parse_llm_response(llm_response_text)
-
-            if not parsed_response:
-                return "Error: Failed to parse LLM response. Please check the response format."
-            
-            # Add raw response
-            self._add_to_history(MessageRole.ASSISTANT.value, llm_response_text)
-
-            if parsed_response["type"] == LLMResponseType.TOOL_CALL.value:
-                success = self._handle_tool_call(parsed_response)
-                if not success:
-                    # Continue to next iteration to let LLM try again
-                    continue
-            
-            
-            elif parsed_response["type"] == LLMResponseType.ANSWER.value:
-                answer = parsed_response["content"]
-                self._add_to_history(role=MessageRole.ASSISTANT.value, content=answer)
-                return answer # Task considered complete
-            
-            else:
-                # Should not happen with current parsing
-                self._add_to_history(role=MessageRole.SYSTEM.value, content="Error: Unknown parsed action type.")
-                return "Error: Internal agent error in parsing LLM response."
-        
-        return "Agent reached maximum iterations without completing the task."
-    
-    def _handle_tool_call(self, tool_call: ToolCallResponse) -> bool:
-        """Handle a tool call response. Returns True if successful, False otherwise."""
-        tool_name = tool_call['tool_name']
-        arguments = tool_call["arguments"]
-        thought = tool_call["thought"]
-
-        self._add_to_history(MessageRole.ASSISTANT.value, f"Thought: {thought} \nUsing tool: {tool_name}")
-
-        print(f"Agent Thought: {thought}")
-        print(f"Agent using tool: {tool_name} with arguments: {arguments}")
-
-        tool = self.tool_registry.get_tool(tool_name)
-
-        if not tool:
-            error_message = f"Error: Unknown tool '{tool_name}'"
-            self._add_to_history(MessageRole.SYSTEM.value, error_message)
-            print(error_message)
+    def _validate_plan_structure(self, plan_data: dict) -> bool:
+        """Validates the structure of the received plan."""
+        if not isinstance(plan_data, dict):
             return False
         
+        if "plan" not in plan_data or not isinstance(plan_data['plan'], list):
+            return False
+        
+        # Check that plan has at least one step and ends with "end"
+        if not plan_data['plan']:
+            return False
+
+        # Validate each step has required fields
+        for step in plan_data["plan"]:
+            if not isinstance(step, dict) or "id" not in step or "type" not in step:
+                return False
+            
+        # TODO: Validate all input_refs are actually correct
+
+        return True
+    
+    def _execute_plan(self, plan_data: dict, max_iterations: Optional[int] = None) -> str:
+        """
+        Executes the created plan step by step.
+        
+        Args:
+            plan_data: The plan dictionary from planning phase
+            max_iterations: Override for maximum iterations
+            
+        Returns:
+            Final execution result
+        """
+
+        # Create Execution Plan Object
+        steps = [PlanStep(**step_dict) for step_dict in plan_data['plan']]
+
+        self.current_plan = ExecutionPlan(
+            steps=steps,
+            max_iterations = plan_data.get("max_iterations"),
+            reasoning=plan_data.get("reasoning")
+        )
+
+        # Determine iteration limit
+        if max_iterations is None:
+            max_iterations = self.current_plan.max_iterations or settings.MAX_AGENT_ITERATIONS
+
+        logger.info(f"Executing plan with {len(steps)} steps, max iterations: {max_iterations}")
+
+        current_iteration = 0
+
+        while current_iteration < max_iterations:
+            current_iteration += 1
+
+            # Check if we have reached the end
+            if self.current_plan.current_step_index >= len(self.current_plan.steps):
+                logger.info("Reached end of plan")
+                break
+
+            current_step = self.current_plan.steps[self.current_plan.current_step_index]
+
+            # Skip already executed steps (for jump scenarios)
+            # TODO: Understand this better later
+            if current_step.executed and current_step.type not in ["if", "goto"]:
+                self.current_plan.current_step_index += 1
+                continue
+
+            logger.info(f"Iteration {current_iteration}: Executing step {current_step.id} ({current_step.type})")
+
+            # Execute the current step
+            success = self._execute_step(current_step)
+
+            if not success:
+                error_msg = f"Failed to execute step {current_step.id}"
+                logger.error(error_msg)
+                return error_msg
+
+            # Handle end step
+            if current_step.type == "end":
+                logger.info("Execution completed successfully")
+                break
+
+            # Move to next step (unless we jumped)
+            if not self.jumped:
+                self.current_plan.current_step_index += 1
+            else:
+                self.jumped = False
+
+        # Return final result
+        return self._get_final_result()
+    
+    def _execute_step(self, step: PlanStep) -> bool:
+        """
+        Executes a single plan step.
+        
+        Args:
+            step: The PlanStep to execute
+            
+        Returns:
+            True if successful, False otherwise
+        """
+
         try:
-            tool_result = tool.execute(arguments)
-            logger.info(f"Tool {tool_name} executed successfully with result: {tool_result}")
-            self._add_to_history(MessageRole.ASSISTANT.value, f"Tool {tool_name} output: {tool_result}")
-            print(f"Tool result: {tool_result}")
-            return True
+            if step.type == "llm":
+                return self._execute_llm_step(step)
+            elif step.type == "tool":
+                return self._execute_tool_step(step)
+            elif step.type == "if":
+                return self._execute_if_step(step)
+            elif step.type == "goto":
+                return self._execute_goto_step(step)
+            elif step.type == "end":
+                step.executed = True
+                return True
+            else:
+                logger.error(f"Unknown step type: {step.type}")
+                return False
+            
         except Exception as e:
-            error_message = f"Error executing tool {tool_name}: {str(e)}"
-            self._add_to_history(MessageRole.SYSTEM, error_message)
-            print(error_message)
+            logger.error(f"Error executing step {step.id}: {e}")
+            return False
+        
+    def _execute_llm_step(self, step: PlanStep) -> bool:
+        """Executes an LLM step."""
+        if not step.prompt:
+            logger.error(f"LLM step {step.id} missing prompt")
+            return False
+        
+        # Resolve input references in the prompt
+        resolved_prompt = self._resolve_prompt_inputs(step.prompt, step.input_refs)
+
+        logger.info(f"LLM call for step {step.id}: {resolved_prompt[:100]}...")
+
+        # Make LLM call
+        messages = [
+            {"role": "system", "content" : settings.DEFAULT_SYSTEM_PROMPT_TEMPLATE},
+            {"role": "user", "content": resolved_prompt}
+        ]
+        response = self.llm_interface.get_completion(messages=messages)
+
+
+        if not response:
+            logger.error(f"Empty response from LLM for step {step.id}")
+            return False
+        
+        # Store result
+        step.result = response
+        step.executed = True
+
+        # Store in outputs if output_name is specified
+        if step.output_name:
+            self.current_plan.outputs[step.output_name] = response
+            logger.info(f"Stored output '{step.output_name}': {response[:100]}...")
+
+        # Add to conversation history
+        self._add_to_history(MessageRole.ASSISTANT, f"Step {step.id}: {response}")
+
+        return True
+    
+    def _execute_tool_step(self, step: PlanStep) -> bool:
+        """Executes a tool step."""
+        if not step.tool_name:
+            logger.error(f"Tool step {step.id} missing tool_name")
+            return False
+        
+        tool = self.tool_registry.get_tool(step.tool_name)
+        if not tool:
+            logger.error(f"Unknown tool: {step.tool_name}")
+            return False
+        
+        # Resolve arguments if they reference previous outputs
+        resolved_args = self._resolve_tool_arguments(step.arguments, step.input_refs)
+
+        logger.info(f"Tool call for step {step.id}: {step.tool_name} with args {resolved_args}")
+
+        # Execute tool
+        result = tool.execute(resolved_args or {})
+
+        # Store result
+        step.result = str(result)
+        step.executed = True
+        
+        # Store in outputs if output_name is specified
+        if step.output_name:
+            self.current_plan.outputs[step.output_name] = step.result
+            logger.info(f"Stored output '{step.output_name}': {step.result[:100]}...")
+        
+        # Add to conversation history
+        self._add_to_history(MessageRole.ASSISTANT, f"Step {step.id} - Tool {step.tool_name}: {step.result}")
+        
+        return True
+    
+    def _execute_if_step(self, step: PlanStep) -> bool:
+        """Executes a conditional step."""
+        if not step.condition:
+            logger.error(f"If step {step.id} missing condition")
+            return False
+        
+        # Evaluate condition
+        condition_result = self._evaluate_condition(step.condition)
+
+        logger.info(f"Condition '{step.condition}' evaluated to: {condition_result}")
+
+        # Jump if condition is true
+        if condition_result and step.goto_id:
+            self._jump_to_step(step.goto_id)
+
+        step.executed = True
+        return True
+    
+    def _execute_goto_step(self, step: PlanStep) -> bool:
+        """Executes a goto step."""
+        if not step.goto_id:
+            logger.error(f"Goto step {step.id} missing goto_id")
+            return False
+        
+        self._jump_to_step(step.goto_id)
+        step.executed = True
+        return True
+    
+    def _resolve_prompt_inputs(self, prompt: str, input_refs: Optional[list[str]]) -> str:
+        """
+        Resolves input references in a prompt string.
+        
+        Args:
+            prompt: The prompt template with {variable} placeholders
+            input_refs: List of output names to reference
+            
+        Returns:
+            Resolved prompt string
+        """
+
+        if not input_refs:
+            return prompt
+        
+        resolved_prompt = prompt
+
+        # Replace each {variable} with its value from outputs
+        for ref in input_refs:
+            if ref in self.current_plan.outputs:
+                # TODO: Check if placeholder implementation is correct
+                placeholder = f"{{{ref}}}"
+                value = self.current_plan.outputs[ref]
+                resolved_prompt = resolved_prompt.replace(placeholder, value)
+            else:
+                logger.warning(f"Referenced output '{ref}' not found in outputs")
+        
+        return resolved_prompt
+    
+    def _resolve_tool_arguments(self, arguments: Optional[dict], input_refs: Optional[list[str]]) -> Optional[dict]:
+        """
+        Resolves input references in tool arguments.
+        
+        Args:
+            arguments: The tool arguments dictionary
+            input_refs: List of output names that might be referenced
+            
+        Returns:
+            Resolved arguments dictionary
+        """
+
+        if not arguments:
+            return arguments
+        
+        if not input_refs:
+            return arguments
+        
+        # For now, simple approach - could be enhanced for complex argument resolution
+        resolved_args = arguments.copy()
+
+        # If arguments contain string references to outputs, replace them
+        for key, value in resolved_args.items():
+            if isinstance(value, str) and value in self.current_plan.outputs:
+                resolved_args[key] = self.current_plan.outputs[value]
+        
+        return resolved_args
+    
+    def _evaluate_condition(self, condition: str) -> bool:
+        """
+        Evaluates a condition string against current outputs.
+        
+        Args:
+            condition: Condition string like "variable_name >= 7"
+            
+        Returns:
+            Boolean result of condition evaluation
+        """
+
+        try:
+            # Simple condition evaluation - enhance as needed
+            # Extract variable name and operation
+            # For now, handle basic comparisons
+            
+            # Replace output variables with their values
+
+            resolved_condition = condition
+            for output_name, output_value in self.current_plan.outputs.items():
+                resolved_condition = resolved_condition.replace(output_name, f"'{output_value}'")
+
+            logger.info(f"Evaluating condition: {resolved_condition}")
+
+            # TODO: Simple eval - in production, use a safer expression evaluator
+            result = eval(resolved_condition)
+            return bool(result)
+        
+        except Exception as e:
+            logger.error(f"Failed to evaluate condition '{condition}': {e}")
+            return False
+        
+    def _jump_to_step(self, target_id: str) -> bool:
+        """
+        Jumps to a step with the given ID.
+        
+        Args:
+            target_id: The ID of the step to jump to
+            
+        Returns:
+            True if jump was successful, False otherwise
+        """
+        for i, step in enumerate(self.current_plan.steps):
+            if step.id == target_id:
+                self.current_plan.current_step_index = i
+                self.jumped = True
+                logger.info(f"Jumped to step {target_id} (index {i})")
+                return True
+            
+        logger.error(f"Jump target '{target_id}' not found")
+        return False
+    
+    def _get_final_result(self) -> str:
+        """
+        Determines the final result from plan execution.
+        
+        Returns:
+            Final result string
+        """
+
+        outputs = self.current_plan.outputs
+
+        # TODO: Make it more robust
+        # Look for common final result names
+
+        for final_key in ["final_result", "result", "answer", "output"]:
+            if final_key in outputs:
+                return outputs[final_key]
+            
+        # If no explicit final result, return the last output
+        if outputs:
+            last_output = list(outputs.values())[-1]
+            return last_output
+        
+        return "Task completed successfully (no outputs generated)"
+    
+    def _add_to_history(self, role: MessageRole, content: str):
+        """Adds a message to the conversation history."""
+        self.conversation_history.append(MessageDict(role, content))
 
     def _count_tokens(self, text: str) -> int:
         """Count tokens in a text string."""
         return len(self.tokenizer.encode(text))
     
-    def _count_message_tokens(self, messages: list[dict]) -> int:
-        """Count total tokens in a list of messages."""
-        total_tokens = 0
-        for message in messages:
-            # Account for message structure overhead (role, formatting, etc.)
-            total_tokens += 4  # Overhead per message
-            total_tokens += self._count_tokens(message["content"])
-        return total_tokens
+    def get_plan_status(self) -> dict:
+        """
+        Returns current plan execution status.
+        
+        Returns:
+            Dictionary with plan status information
+        """
 
+        if not self.current_plan:
+            return {"status": "no_plan"}
+        
+        total_steps = len(self.current_plan.steps)
+        current_step = self.current_plan.current_step_index
+        executed_steps = sum(1 for step in self.current_plan.steps if step.executed)
+        
+        return {
+            "status": "executing" if current_step < total_steps else "completed",
+            "total_steps": total_steps,
+            "current_step_index": current_step,
+            "executed_steps": executed_steps,
+            "outputs": dict(self.current_plan.outputs),
+            "reasoning": self.current_plan.reasoning
+        }
 
 

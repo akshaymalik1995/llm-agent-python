@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 from pathlib import Path
-from src.prompts.agent_prompts import SYSTEM_PROMPT_TEMPLATE
+from src.prompts.agent_prompts import EXECUTION_SYSTEM_PROMPT
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DOTENV_PATH = PROJECT_ROOT / ".env"
@@ -35,7 +35,7 @@ class AppConfig:
     LOCAL_MODEL_BASE_URL: str | None = os.getenv("LOCAL_MODEL_BASE_URL") # e.g., "http://localhost:11434/v1" for Ollama OpenAI-compatible API
     DEFAULT_LOCAL_MODEL_NAME: str | None = os.getenv("DEFAULT_LOCAL_MODEL_NAME")
 
-    DEFAULT_SYSTEM_PROMPT_TEMPLATE: str = SYSTEM_PROMPT_TEMPLATE
+    DEFAULT_SYSTEM_PROMPT_TEMPLATE: str = EXECUTION_SYSTEM_PROMPT
 
     # Context settings
     MAX_CONTEXT_TOKENS: int = 25000

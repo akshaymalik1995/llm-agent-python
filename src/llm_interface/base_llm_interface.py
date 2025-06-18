@@ -21,38 +21,38 @@ class BaseLLMInterface(ABC):
         self.api_key = api_key
         self.config = kwargs # Store other configurations
 
-        @abstractmethod
-        def get_completion(self, messages: List[Dict[str, str]], **kwargs: Any) -> Optional[str]:
-            """
-            messages (List[Dict[str, str]]): A list of message dictionaries,
-                typically following a format like:
-                [
-                    {"role": "system", "content": "You are a helpful assistant."},
-                    {"role": "user", "content": "Who won the world series in 2020?"}
-                ]
+    @abstractmethod
+    def get_completion(self, messages: List[Dict[str, str]], **kwargs: Any) -> Optional[str]:
+        """
+        messages (List[Dict[str, str]]): A list of message dictionaries,
+            typically following a format like:
+            [
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": "Who won the world series in 2020?"}
+            ]
 
-            **kwargs: Additional keyword arguments that might be specific to an LLM's
-                      completion endpoint (e.g., temperature, max_tokens).
+        **kwargs: Additional keyword arguments that might be specific to an LLM's
+                    completion endpoint (e.g., temperature, max_tokens).
 
-            Returns:
-            Optional[str]: The LLM's response content as a string, or None if an error occurs.
-            """
-            pass
+        Returns:
+        Optional[str]: The LLM's response content as a string, or None if an error occurs.
+        """
+        pass
 
-        def _prepare_request_data(self, messages: List[Dict[str, str]], **kwargs: Any) -> Dict[str, Any]:
-            """
-            (Optional) Helper method to prepare the data payload for the LLM API request.
+    def _prepare_request_data(self, messages: List[Dict[str, str]], **kwargs: Any) -> Dict[str, Any]:
+        """
+        (Optional) Helper method to prepare the data payload for the LLM API request.
 
-            This can be overridden by subclasses if they have very different request structures.
-            """
+        This can be overridden by subclasses if they have very different request structures.
+        """
 
-            request_data = {
-                "model": self.model_name,
-                "messages": messages,
-                **self.config, # Include base configurations
-                **kwargs      # Override with call-specific configurations
-            }
-            return request_data
+        request_data = {
+            "model": self.model_name,
+            "messages": messages,
+            **self.config, # Include base configurations
+            **kwargs      # Override with call-specific configurations
+        }
+        return request_data
         
-        def __repr__(self) -> str:
-            return f"<{self.__class__.__name__}(model='{self.model_name}')>"
+    def __repr__(self) -> str:
+        return f"<{self.__class__.__name__}(model='{self.model_name}')>"

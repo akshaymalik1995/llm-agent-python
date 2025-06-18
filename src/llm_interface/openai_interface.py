@@ -35,7 +35,7 @@ class OpenAIInterface(BaseLLMInterface):
             print(f"Error initializing OpenAI client: {e}")
             self.client = None # type: ignore
 
-    def get_completion(self, messages: List[Dict[str, str]], **kwargs: Any) -> Optional[str]:
+    def get_completion(self, messages: List[Dict[str, str]], force_json: bool = False, **kwargs: Any) -> Optional[str]:
         """
         Gets a completion from the OpenAI API.
 
@@ -60,7 +60,8 @@ class OpenAIInterface(BaseLLMInterface):
         request_data = self._prepare_request_data(messages, **kwargs)
 
         # Force JSON response format
-        request_data["response_format"] = {"type": "json_object"}
+        if force_json:
+            request_data["response_format"] = {"type": "json_object"}
 
         # Ensure only valid OpenAI parameters are passed
         valid_openai_params = {"temperature", "max_tokens", "top_p", "frequency_penalty", "presence_penalty", "stop","response_format"}
@@ -88,6 +89,7 @@ class OpenAIInterface(BaseLLMInterface):
             print(f"OpenAI API Rate Limit Error: {e}")
         except APIStatusError as e:
             print(f"OpenAI API Status Error (HTTP Status {e.status_code}): {e.response}")
+            print(f"ERROR: {str(e)}")
         except Exception as e:
             print(f"An unexpected error occurred while calling OpenAI API: {e}")
 
