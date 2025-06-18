@@ -1,49 +1,88 @@
-# AI Agent with Python
+# AI Agent with Planning-Based Execution
 
-A custom-built AI agent system with tool-calling capabilities, designed for extensibility and direct system interaction without relying on third-party frameworks like LangChain or LangGraph.
+A sophisticated AI agent system built from scratch with **planning-first architecture**, designed for complex multi-step task execution without relying on third-party frameworks like LangChain or LangGraph.
 
 ## Overview
 
-This project implements an autonomous AI agent that can:
-- **Use Tools Dynamically**: Leverage a registry of tools to interact with files, execute commands, and more
-- **Iterative Processing**: Make sequential decisions to accomplish complex tasks
-- **State Management**: Maintain context and state across multiple interactions
-- **Extensible Architecture**: Easy to add new tools and capabilities
-- **LLM Agnostic**: Currently supports OpenAI with a pluggable interface for other providers
+This project implements an autonomous AI agent that uses a **two-phase execution model**:
+
+### 🧠 **Planning Phase**
+- Analyzes user requests and creates detailed execution plans
+- Breaks down complex tasks into structured, sequential steps
+- Supports conditional logic, loops, and iterative refinement
+- Estimates resource requirements and iteration limits
+
+### ⚡ **Execution Phase**
+- Follows pre-created plans step-by-step
+- Executes LLM calls and tool operations deterministically
+- Manages variable references and data flow between steps
+- Handles control flow (conditions, jumps, loops)
+
+**Key Capabilities:**
+- **Complex Task Orchestration**: Multi-step workflows with branching logic
+- **Iterative Processing**: Built-in support for critique-and-improve cycles
+- **Tool Integration**: Extensible tool registry with JSON schema validation  
+- **Variable Management**: Data flows seamlessly between execution steps
+- **Framework-Free**: Pure Python implementation with complete control
 
 ## Key Features
 
-- **Framework-Free**: Built from scratch in Python without external agent frameworks
-- **Tool System**: Extensible tool registry with JSON schema validation
-- **Conversation Management**: Maintains conversation history with token management
-- **Error Handling**: Robust error handling and validation at multiple layers
-- **Logging**: Comprehensive logging system for debugging and monitoring
-- **Type Safety**: Full type hints and structured response parsing
+- **🎯 Planning-First Architecture**: Creates complete execution plans before starting work
+- **🔄 Complex Workflows**: Supports iterative processes, conditional branching, and loops
+- **⚙️ Tool Integration**: Extensible tool system for environment interaction
+- **📊 Variable Management**: Seamless data flow between execution steps
+- **🚫 Framework-Free**: Built from scratch without external agent dependencies
+- **🔍 Full Observability**: Comprehensive logging of plans, execution, and state changes
+- **⏱️ Resource Management**: Built-in iteration limits and token management
+- **🎨 Flexible LLM Interface**: Pluggable support for different LLM providers
+
+## Real-World Example
+
+```bash
+python run.py "Write an essay on Liberalism? Critique and Improve it 3 times."
+```
+
+**What happens:**
+1. **Planning Phase**: Creates 9-step execution plan
+2. **Execution Phase**: 
+   - Step L1: Write initial essay
+   - Step L2: Generate detailed critique  
+   - Step L3: Improve essay based on critique
+   - Step L4: Second critique round
+   - Step L5: Second improvement round
+   - Step L6: Third critique round
+   - Step L7: Final improvement
+   - Step L8: Present final result with summary
+   - Step END: Complete execution
+
+The agent automatically manages variable references (`{essay}`, `{critique1}`, etc.) and produces a polished final essay through systematic iteration.
 
 ## Project Structure
 
 ```
 llm-agent-python/
 ├── src/
-│   ├── agent/              # Core agent logic
-│   │   └── agent_core.py   # Main agent orchestration
-│   ├── llm_interface/      # LLM provider abstractions
-│   │   ├── base_llm_interface.py
-│   │   └── openai_interface.py
-│   ├── tooling/            # Tool system
-│   │   ├── base_tool.py    # Abstract tool interface
-│   │   ├── tool_registry.py # Tool management
-│   │   └── tools/          # Individual tool implementations
+│   ├── agent/                    # Core agent logic
+│   │   ├── agent_core.py         # Planning & execution orchestration
+│   │   └── types.py              # Plan and execution data structures
+│   ├── llm_interface/            # LLM provider abstractions
+│   │   ├── base_llm_interface.py # Abstract LLM interface
+│   │   └── openai_interface.py   # OpenAI implementation
+│   ├── tooling/                  # Tool system
+│   │   ├── base_tool.py          # Abstract tool interface
+│   │   ├── tool_registry.py      # Tool management and discovery
+│   │   └── tools/                # Individual tool implementations
 │   │       ├── get_current_time_tool.py
 │   │       └── list_files_tool.py
-│   ├── prompts/            # System prompts and templates
-│   │   └── agent_prompts.py
-│   ├── config.py           # Configuration management
-│   ├── logging.py          # Logging setup
-│   └── main.py             # Application entry point
-├── docs/                   # Documentation
-├── logs/                   # Runtime logs
-└── run.py                  # Command-line interface
+│   ├── prompts/                  # System prompts and templates
+│   │   ├── agent_prompts.py      # Execution-time prompts
+│   │   └── planning_prompt.py    # Planning-phase prompts
+│   ├── config.py                 # Configuration management
+│   ├── logging.py                # Logging setup
+│   └── main.py                   # Application entry point
+├── docs/                         # Documentation
+├── logs/                         # Runtime execution logs
+└── run.py                        # Command-line interface
 ```
 
 ## Installation & Setup
@@ -80,33 +119,130 @@ echo "OPENAI_API_KEY=your_api_key_here" > .env
 
 ## Usage
 
-### Basic Usage
+### Simple Tasks
 
 ```bash
-python run.py "What time is it and list the files in the current directory?"
+# Basic information queries
+python run.py "What time is it?"
+
+# File system exploration  
+python run.py "List all Python files in the src directory"
 ```
 
-### Advanced Examples
+### Complex Multi-Step Tasks
 
 ```bash
-# File exploration
-python run.py "Show me all Python files in the src directory"
+# Iterative content creation
+python run.py "Write an essay on climate change, then critique and improve it twice"
 
-# Time-based queries  
-python run.py "What's the current time and find all log files?"
+# Research and analysis workflows
+python run.py "List all tools available, analyze their purposes, and suggest improvements"
 
-# Multi-step tasks
-python run.py "List all the Python files in the tooling directory and tell me what time it is"
+# Conditional processing
+python run.py "Create a summary of the project structure, and if it's complex, provide implementation recommendations"
 ```
 
-## Architecture
+### Task Complexity Examples
 
-### Core Components
+**Simple Task:** Direct answers or single tool calls
+```
+Query: "What time is it?"
+Plan: 1 step (tool call)
+```
 
-1. **AgentCore**: Main orchestration layer that manages the conversation loop
-2. **LLM Interface**: Abstraction layer for different LLM providers
-3. **Tool Registry**: Manages available tools and their schemas
-4. **Tools**: Individual capabilities (file operations, time queries, etc.)
+**Medium Task:** Sequential steps with data flow
+```  
+Query: "List Python files and analyze their structure"
+Plan: 2-3 steps (tool → analysis → summary)
+```
+
+**Complex Task:** Iterative refinement with conditions
+```
+Query: "Write and improve content until it's excellent" 
+Plan: 6+ steps with loops and conditional logic
+```
+
+## Architecture Deep Dive
+
+### Two-Phase Execution Model
+
+#### Phase 1: Planning 🧠
+```
+User Query → Planning LLM Call → Structured Execution Plan
+```
+
+The planning phase creates a detailed JSON execution plan:
+
+```json
+{
+  "plan": [
+    {
+      "id": "L1",
+      "type": "llm", 
+      "description": "Write initial essay",
+      "prompt": "Write a comprehensive essay on...",
+      "output_name": "essay"
+    },
+    {
+      "id": "L2",
+      "type": "llm",
+      "description": "Critique the essay", 
+      "prompt": "Provide detailed critique of: {essay}",
+      "input_refs": ["essay"],
+      "output_name": "critique"
+    },
+    {
+      "id": "C1",
+      "type": "if",
+      "condition": "critique_score >= 8", 
+      "goto_id": "END"
+    },
+    {
+      "id": "END",
+      "type": "end"
+    }
+  ],
+  "max_iterations": 10,
+  "reasoning": "Iterative improvement workflow..."
+}
+```
+
+#### Phase 2: Execution ⚡
+```
+Plan → Step-by-Step Execution → Variable Management → Final Result
+```
+
+The execution engine:
+1. **Processes each step sequentially**
+2. **Resolves variable references** (`{essay}` → actual content)
+3. **Handles control flow** (conditions, jumps, loops)
+4. **Manages state** across all steps
+
+### Step Types
+
+| Type | Purpose | Example Use Case |
+|------|---------|------------------|
+| `llm` | Language model calls | Content generation, analysis, reasoning |
+| `tool` | Environment interaction | File operations, API calls, system commands |
+| `if` | Conditional branching | Quality checks, decision points |
+| `goto` | Flow control | Loops, retry logic |
+| `end` | Termination | Mark completion |
+
+### Variable System
+
+Variables flow between steps using references:
+
+```json
+{
+  "prompt": "Improve this text: {original_text} based on: {feedback}",
+  "input_refs": ["original_text", "feedback"]
+}
+```
+
+The execution engine automatically:
+- **Resolves references** to actual values
+- **Maintains variable scope** across steps  
+- **Validates dependencies** before execution
 
 ### Tool System
 
