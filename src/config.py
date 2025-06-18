@@ -29,13 +29,18 @@ class AppConfig:
     DEFAULT_GEMINI_MODEL: str = "gemini-1.5-pro-latest" # Or other appropriate model
 
     # Agent settings
-    MAX_AGENT_ITERATIONS: int = 3
+    MAX_AGENT_ITERATIONS: int = 10
 
     # For local models (example)
     LOCAL_MODEL_BASE_URL: str | None = os.getenv("LOCAL_MODEL_BASE_URL") # e.g., "http://localhost:11434/v1" for Ollama OpenAI-compatible API
     DEFAULT_LOCAL_MODEL_NAME: str | None = os.getenv("DEFAULT_LOCAL_MODEL_NAME")
 
     DEFAULT_SYSTEM_PROMPT_TEMPLATE: str = SYSTEM_PROMPT_TEMPLATE
+
+    # Context settings
+    MAX_CONTEXT_TOKENS: int = 25000
+    CONTEXT_TOKEN_BUFFER: int = 2000  # Reserve for response generation
+    CONTEXT_SUMMARY_THRESHOLD: float = 0.8  # When to add context summary
 
 # Create a single instance of the config to be imported by other modules
 settings = AppConfig()

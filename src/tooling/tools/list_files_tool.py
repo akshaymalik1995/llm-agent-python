@@ -1,4 +1,5 @@
 import json
+import fnmatch
 from pathlib import Path
 from typing import List, Dict, Any
 from src.tooling.base_tool import BaseTool
@@ -11,22 +12,40 @@ class ListFilesTool(BaseTool):
     @property
     def description(self) -> str:
         return """
-        Lists files and directories in the specified directory (like 'ls' command).
+        Lists files and directories in the specified directory ONLY (no recursion).
+        
+        HARD LIMIT: Maximum 20 files returned to keep LLM context manageable.
+        Use pattern matching to find specific files. For nested exploration, 
+        call this tool multiple times with different paths.
         
         Features:
-        - List files in current directory or specified path
-        - Optional recursive listing for nested folders
+        - List files in specified directory only (not subdirectories)
+        - Pattern matching with glob syntax (*.py, test_*, *config*)
+        - Substring search with name_contains
+        - Filter by file extensions
         - Show hidden files (starting with .)
         - Include file details (size, permissions, modified time)
-        - Filter by file extensions
-        - Sort options (name, size, date)
+        - Sort options (name, size, date, type)
+        
+        Exploration Strategy:
+        - Start with root directory to see structure
+        - Navigate into specific subdirectories as needed
+        - Use patterns to find specific file types
+        
+        Usage Examples:
+        - Directory overview: {"path": "src"}
+        - Find Python files: {"path": "src", "pattern": "*.py"}
+        - Find test files: {"path": "tests", "pattern": "test_*"}
+        - Find config files: {"name_contains": "config"}
+        - Explore subdirectory: {"path": "src/tooling/tools"}
         
         Arguments:
-        - path: Directory path to list (default: current directory)
-        - recursive: Include subdirectories recursively
+        - path: Directory path to list (defaults to current directory)
+        - pattern: Glob pattern for filename matching (e.g., '*.py', 'test_*')
+        - name_contains: Substring to match in filenames (case-insensitive)
+        - extensions: Filter by file extensions (e.g., ['.py', '.txt'])
         - show_hidden: Include hidden files/directories
         - show_details: Include file size, permissions, modification time
-        - extensions: Filter by file extensions (e.g., ['.py', '.txt'])
         - sort_by: Sort by 'name', 'size', 'modified', or 'type'
         """
     
@@ -37,35 +56,33 @@ class ListFilesTool(BaseTool):
             "properties": {
                 "path": {
                     "type": "string", 
-                    "description": "Directory path to list. Defaults to current directory if not provided.",
-                    "default": "."
+                    "description": "Directory path to list. Defaults to current directory if not provided."
                 },
-                "recursive": {
-                    "type": "boolean",
-                    "description": "If true, list files recursively in subdirectories.",
-                    "default": False
+                "pattern": {
+                    "type": "string",
+                    "description": "Glob pattern to match filenames (e.g., '*.py', 'test_*', '*config*'). Use this to find specific files when 20 limit is too restrictive."
                 },
-                "show_hidden": {
-                    "type": "boolean",
-                    "description": "If true, include hidden files and directories (starting with '.').",
-                    "default": False
-                },
-                "show_details": {
-                    "type": "boolean",
-                    "description": "If true, include file details like size, permissions, and modification time.",
-                    "default": False
+                "name_contains": {
+                    "type": "string",
+                    "description": "Filter files whose names contain this substring (case-insensitive). Alternative to pattern for simple searches."
                 },
                 "extensions": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Filter files by extensions. Example: ['.py', '.txt', '.md']",
-                    "default": []
+                    "description": "Filter files by extensions. Example: ['.py', '.txt', '.md']"
+                },
+                "show_hidden": {
+                    "type": "boolean",
+                    "description": "If true, include hidden files and directories (starting with '.')."
+                },
+                "show_details": {
+                    "type": "boolean",
+                    "description": "If true, include file details like size, permissions, and modification time."
                 },
                 "sort_by": {
                     "type": "string",
                     "enum": ["name", "size", "modified", "type"],
-                    "description": "Sort files by name, size, modification time, or file type.",
-                    "default": "name"
+                    "description": "Sort files by name, size, modification time, or file type."
                 }
             },
             "required": []
@@ -73,12 +90,16 @@ class ListFilesTool(BaseTool):
     
     def execute(self, args: dict) -> str:
         try:
+            # Hard limit for LLM context management
+            MAX_FILES = 20
+            
             # Extract arguments with defaults
             path = args.get("path", ".")
-            recursive = args.get("recursive", False)
+            pattern = args.get("pattern", "*")  # Default to all files
+            name_contains = args.get("name_contains", "")
+            extensions = args.get("extensions", [])
             show_hidden = args.get("show_hidden", False)
             show_details = args.get("show_details", False)
-            extensions = args.get("extensions", [])
             sort_by = args.get("sort_by", "name")
             
             # Convert to Path object and resolve
@@ -99,16 +120,28 @@ class ListFilesTool(BaseTool):
             
             # Collect files
             files_data = self._collect_files(
-                target_path, recursive, show_hidden, show_details, extensions
+                target_path, show_hidden, show_details, extensions, 
+                pattern, name_contains, MAX_FILES
             )
             
             # Sort files
             files_data = self._sort_files(files_data, sort_by)
             
+            # Check if we hit the limit
+            truncated = len(files_data) >= MAX_FILES
+            
             return json.dumps({
                 "status": "success",
                 "path": str(target_path),
                 "total_items": len(files_data),
+                "max_files": MAX_FILES,
+                "truncated": truncated,
+                "truncated_message": f"Results limited to {MAX_FILES} files. Use 'pattern' or 'name_contains' to narrow search." if truncated else None,
+                "search_criteria": {
+                    "pattern": pattern if pattern != "*" else None,
+                    "name_contains": name_contains if name_contains else None,
+                    "extensions": extensions if extensions else None
+                },
                 "files": files_data
             }, indent=2)
             
@@ -123,36 +156,52 @@ class ListFilesTool(BaseTool):
                 "message": f"Unexpected error: {str(e)}"
             })
     
-    def _collect_files(self, path: Path, recursive: bool, show_hidden: bool, 
-                      show_details: bool, extensions: List[str]) -> List[Dict[str, Any]]:
-        """Collect file information from the specified path."""
+    def _collect_files(self, path: Path, show_hidden: bool, show_details: bool, 
+                      extensions: List[str], pattern: str, name_contains: str, 
+                      max_files: int) -> List[Dict[str, Any]]:
+        """Collect file information from the specified path only (no recursion)."""
         files_data = []
+        files_found = 0
+        
+        def _should_include_file(item: Path) -> bool:
+            """Check if file should be included based on all filters."""
+            # Skip hidden files if not requested
+            if not show_hidden and item.name.startswith('.'):
+                return False
+            
+            # Apply pattern matching (case-insensitive)
+            if not fnmatch.fnmatch(item.name.lower(), pattern.lower()):
+                return False
+            
+            # Apply name contains filter (case-insensitive)
+            if name_contains and name_contains.lower() not in item.name.lower():
+                return False
+            
+            # Filter by extensions if specified (only for files)
+            if extensions and item.is_file():
+                if not any(item.name.lower().endswith(ext.lower()) for ext in extensions):
+                    return False
+            
+            return True
         
         try:
-            # Choose iteration method based on recursive flag
-            if recursive:
-                pattern = "**/*" if show_hidden else "**/[!.]*"
-                items = path.glob(pattern)
-            else:
-                items = path.iterdir()
+            # Simple directory iteration - no recursion
+            items = path.iterdir()
             
             for item in items:
-                # Skip hidden files if not requested
-                if not show_hidden and item.name.startswith('.'):
-                    continue
-                
-                # Filter by extensions if specified
-                if extensions and item.is_file():
-                    if not any(item.name.lower().endswith(ext.lower()) for ext in extensions):
-                        continue
-                
-                file_info = self._get_file_info(item, show_details)
-                files_data.append(file_info)
-                
+                # Stop if we've found enough files
+                if files_found >= max_files:
+                    break
+                    
+                if _should_include_file(item):
+                    file_info = self._get_file_info(item, show_details)
+                    files_data.append(file_info)
+                    files_found += 1
+                    
         except PermissionError:
             # Skip directories we can't access
             pass
-            
+        
         return files_data
     
     def _get_file_info(self, path: Path, show_details: bool) -> Dict[str, Any]:
