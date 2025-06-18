@@ -58,6 +58,7 @@ class AgentCore:
         
         # Initialize tokenizer (using GPT-4 tokenizer as standard)
         self.tokenizer = tiktoken.encoding_for_model("gpt-4")
+
     def _format_system_prompt(self, template: str) -> str:
         """Formats the system prompt template with dynamic information like tool schemas."""
         tool_schemas_json = json.dumps(self.tool_registry.get_all_tools_info(), indent=2)
@@ -69,216 +70,15 @@ class AgentCore:
 
     def _construct_llm_prompt(self) -> list[dict]:
         """
-        Constructs the full prompt for the LLM with intelligent token management.
-        Preserves most important context while staying within token limits.
+        Constructs the full prompt for the LLM, including system prompt
+        and conversation history.
+        The format (list of dicts) depends on the LLM API (e.g., OpenAI's chat format).
         """
-        # Always include system prompt
-        system_message = {"role": MessageRole.SYSTEM.value, "content": self._format_system_prompt(self.system_prompt_template)}
-        messages = [system_message]
+        messages = [{"role": MessageRole.SYSTEM.value, "content": self._format_system_prompt(self.system_prompt_template)}]
+
         
-        # Count system prompt tokens
-        current_tokens = self._count_message_tokens([system_message])
-        
-        if not self.conversation_history:
-            return messages
-        
-        # Apply context management strategy
-        managed_history = self._manage_context_window(self.conversation_history, self.effective_max_tokens - current_tokens)
-        messages.extend(managed_history)
-        
-        final_token_count = self._count_message_tokens(messages)
-        logger.info(f"Final prompt token count: {final_token_count}/{self.max_tokens}")
-        
+        messages.extend(self.conversation_history) # TODO: Explore options to truncate or summarize the history
         return messages
-
-    def _manage_context_window(self, history: list[MessageDict], available_tokens: int) -> list[MessageDict]:
-        """
-        Intelligent context window management with multiple strategies.
-        
-        Priority order:
-        1. Always preserve initial user query
-        2. Always preserve most recent conversation turn
-        3. Summarize or truncate middle content
-        4. Preserve tool results that are referenced later
-        """
-        if not history:
-            return []
-        
-        # Strategy 1: Try to fit everything
-        total_tokens = self._count_message_tokens(history)
-        if total_tokens <= available_tokens:
-            logger.info("All conversation history fits within token limit")
-            return history
-        
-        logger.info(f"Context window management needed: {total_tokens} > {available_tokens}")
-        
-        # Strategy 2: Progressive truncation
-        return self._progressive_truncation(history, available_tokens)
-
-    def _progressive_truncation(self, history: list[MessageDict], available_tokens: int) -> list[MessageDict]:
-        """
-        Progressive truncation strategy that preserves the most important context.
-        """
-        if not history:
-            return []
-        
-        # Always preserve first user message (the initial query)
-        preserved_messages = [history[0]]
-        remaining_history = history[1:]
-        
-        # Calculate tokens for preserved messages
-        preserved_tokens = self._count_message_tokens(preserved_messages)
-        available_for_rest = available_tokens - preserved_tokens
-        
-        if available_for_rest <= 0:
-            logger.warning("Initial user query exceeds available tokens")
-            return preserved_messages
-        
-        # Strategy: Keep recent context + important tool results
-        managed_middle = self._manage_middle_context(remaining_history, available_for_rest)
-        
-        result = preserved_messages + managed_middle
-        final_tokens = self._count_message_tokens(result)
-        logger.info(f"After truncation: {final_tokens}/{available_tokens} tokens used")
-        
-        return result
-
-    def _manage_middle_context(self, history: list[MessageDict], available_tokens: int) -> list[MessageDict]:
-        """
-        Manage the middle part of conversation history.
-        Keeps recent context and important tool results.
-        """
-        if not history:
-            return []
-        
-        # Strategy: Keep recent messages first, then work backwards
-        recent_messages = []
-        current_tokens = 0
-        
-        # Start from the most recent and work backwards
-        for message in reversed(history):
-            message_tokens = self._count_message_tokens([message])
-            
-            if current_tokens + message_tokens > available_tokens:
-                # If this message would exceed limit, decide whether to include it
-                if self._is_important_message(message):
-                    # Try to summarize instead of dropping
-                    summarized = self._summarize_message(message, available_tokens - current_tokens)
-                    if summarized:
-                        recent_messages.insert(0, summarized)
-                        break
-                else:
-                    # Skip this message and continue
-                    break
-            
-            recent_messages.insert(0, message)
-            current_tokens += message_tokens
-        
-        # If we still have space and missed important context, add summary
-        if current_tokens < available_tokens * 0.8:  # Use 80% threshold
-            summary = self._create_context_summary(history, len(recent_messages))
-            if summary:
-                summary_tokens = self._count_message_tokens([summary])
-                if current_tokens + summary_tokens <= available_tokens:
-                    recent_messages.insert(0, summary)
-        
-        return recent_messages
-
-    def _is_important_message(self, message: MessageDict) -> bool:
-        """Determine if a message contains important context that shouldn't be lost."""
-        content = message["content"].lower()
-        
-        # Important if it contains:
-        # - Error messages
-        # - Tool results with structured data
-        # - User corrections or clarifications
-        important_indicators = [
-            "error:", "failed", "exception",
-            "tool", "result:", "output:",
-            "correction:", "actually", "instead",
-            '"status": "success"', '"files":', '"total_items":'
-        ]
-        
-        return any(indicator in content for indicator in important_indicators)
-
-    def _summarize_message(self, message: MessageDict, max_tokens: int) -> MessageDict | None:
-        """Summarize a message to fit within token constraints."""
-        if max_tokens < 50:  # Minimum viable summary size
-            return None
-        
-        content = message["content"]
-        
-        # If it's a tool result, extract key information
-        if "tool" in content.lower() and "output:" in content.lower():
-            return self._summarize_tool_result(message, max_tokens)
-        
-        # For other messages, truncate intelligently
-        truncated_content = self._intelligent_truncate(content, max_tokens)
-        if truncated_content:
-            return {
-                "role": message["role"],
-                "content": f"[SUMMARIZED] {truncated_content}"
-            }
-        
-        return None
-
-    def _summarize_tool_result(self, message: MessageDict, max_tokens: int) -> MessageDict:
-        """Summarize tool results to preserve key information."""
-        content = message["content"]
-        
-        # Extract tool name and key results
-        if "list_files" in content:
-            # For file listing results, keep directory and count
-            try:
-                if '"total_items":' in content:
-                    import re
-                    path_match = re.search(r'"path": "([^"]+)"', content)
-                    count_match = re.search(r'"total_items": (\d+)', content)
-                    path = path_match.group(1) if path_match else "unknown"
-                    count = count_match.group(1) if count_match else "unknown"
-                    
-                    summary = f"Tool list_files output: Listed {count} items in {path}"
-                    return {"role": message["role"], "content": f"[SUMMARIZED] {summary}"}
-            except:
-                pass
-        
-        # Fallback: generic tool result summary
-        summary = "Tool execution completed with results"
-        return {"role": message["role"], "content": f"[SUMMARIZED] {summary}"}
-
-    def _intelligent_truncate(self, content: str, max_tokens: int) -> str:
-        """Intelligently truncate content while preserving meaning."""
-        tokens = self.tokenizer.encode(content)
-        if len(tokens) <= max_tokens:
-            return content
-        
-        # Keep first and last portions
-        keep_tokens = max_tokens - 10  # Reserve space for truncation indicator
-        start_tokens = keep_tokens // 2
-        end_tokens = keep_tokens - start_tokens
-        
-        start_text = self.tokenizer.decode(tokens[:start_tokens])
-        end_text = self.tokenizer.decode(tokens[-end_tokens:])
-        
-        return f"{start_text}...[truncated]...{end_text}"
-
-    def _create_context_summary(self, full_history: list[MessageDict], recent_count: int) -> MessageDict | None:
-        """Create a summary of the conversation context that was truncated."""
-        if recent_count >= len(full_history):
-            return None
-        
-        truncated_history = full_history[:-recent_count] if recent_count > 0 else full_history
-        
-        # Count interactions and tool uses
-        user_messages = len([m for m in truncated_history if m["role"] == "user"])
-        tool_uses = len([m for m in truncated_history if "tool" in m["content"].lower()])
-        
-        summary_content = f"[CONTEXT SUMMARY] Previous conversation: {user_messages} user messages, {tool_uses} tool executions. Focus on recent context below."
-        
-        return {
-            "role": MessageRole.SYSTEM.value,
-            "content": summary_content
-        }
 
     def _parse_llm_response(self, response_text: str) -> dict:
         """
@@ -350,6 +150,7 @@ class AgentCore:
             logger.info(f"Iteration {current_iterations}/{max_iterations}")
 
             llm_prompt_messages = self._construct_llm_prompt()
+
             prompt_tokens = self._count_message_tokens(llm_prompt_messages)
             logger.info(f"Sending prompt with {prompt_tokens} tokens to LLM")
 
@@ -368,7 +169,6 @@ class AgentCore:
 
             # --- 2. Parse LLM Response ---
             parsed_response = self._parse_llm_response(llm_response_text)
-            logger.info("Parsed LLM response: %s", parsed_response)
 
             if not parsed_response:
                 return "Error: Failed to parse LLM response. Please check the response format."
