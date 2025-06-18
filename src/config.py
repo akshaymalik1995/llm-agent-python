@@ -29,7 +29,7 @@ class AppConfig:
     DEFAULT_GEMINI_MODEL: str = "gemini-1.5-pro-latest" # Or other appropriate model
 
     # Agent settings
-    MAX_AGENT_ITERATIONS: int = 10
+    MAX_AGENT_ITERATIONS: int = 20
 
     # For local models (example)
     LOCAL_MODEL_BASE_URL: str | None = os.getenv("LOCAL_MODEL_BASE_URL") # e.g., "http://localhost:11434/v1" for Ollama OpenAI-compatible API
