@@ -10,6 +10,17 @@ class ListFilesTool(BaseTool):
         return "list_files"
     
     @property
+    def keywords(self) -> List[str]:
+        return [
+            "list", "files", "directory", "folder", "find", "search", 
+            "explore", "contents", "structure", "ls", "dir", "tree", "filesystem"
+        ]
+    
+    @property
+    def signature(self) -> str:
+        return "list_files(path: str = '.', pattern: str = '*') -> file_list"
+    
+    @property
     def description(self) -> str:
         return """
         Lists files and directories in the specified directory ONLY (no recursion).

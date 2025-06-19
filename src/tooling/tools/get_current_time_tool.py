@@ -1,6 +1,7 @@
 import json
 from datetime import datetime
 from src.tooling.base_tool import BaseTool
+from typing import List
 
 class GetCurrentTimeTool(BaseTool):
     @property
@@ -10,6 +11,17 @@ class GetCurrentTimeTool(BaseTool):
     @property
     def description(self) -> str:
         return "Returns the current date and time. It takes no arguments."
+    
+    @property
+    def keywords(self) -> List[str]:
+        return [
+            "time", "date", "current", "now", "today",
+            "timestamp", "clock", "datetime"
+        ]
+    
+    @property
+    def signature(self) -> str:
+        return "get_current_time() -> datetime_string"
     
     @property
     def input_schema(self) -> dict:

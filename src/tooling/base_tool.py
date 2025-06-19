@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import List
 
 class BaseTool(ABC):
     """
@@ -12,6 +13,42 @@ class BaseTool(ABC):
         """
         A unique, machine-readable name for the tool.
         Example: "read_file", "execute_command"
+        """
+        pass
+
+    @property
+    @abstractmethod
+    def keywords(self) -> List[str]:
+        """
+        A list of keywords that indicate when this tool might be relevant.
+        Used for intelligent tool selection based on query analysis.
+        
+        Example: ["file", "read", "open", "content", "text"]
+        
+        Guidelines:
+        - Include primary action words (read, write, list, execute)
+        - Include domain-specific terms (file, directory, time, command)
+        - Include common synonyms and variations
+        - Keep keywords lowercase for consistent matching
+        - Aim for 5-10 relevant keywords
+        """
+        pass
+
+    @property
+    @abstractmethod
+    def signature(self) -> str:
+        """
+        A concise, function-like signature showing the tool's interface.
+        Helps LLMs understand tool usage patterns quickly.
+        
+        Example: "list_files(path: str, pattern: str = '*') -> file_list"
+        
+        Format guidelines:
+        - Use function-like syntax: tool_name(param1: type, param2: type = default)
+        - Include only the most important parameters
+        - Show optional parameters with default values
+        - Indicate return type after ->
+        - Keep it under 80 characters for readability
         """
         pass
 
@@ -66,6 +103,8 @@ class BaseTool(ABC):
         """
         return {
             "name": self.name,
-            "description": self.description,
-            "input_schema": self.input_schema
+            # "description": self.description,
+            # "input_schema": self.input_schema
+            "keywords": self.keywords,
+            "signature": self.signature
         }
