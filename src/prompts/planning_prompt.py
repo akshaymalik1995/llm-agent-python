@@ -1,9 +1,6 @@
 PLANNING_PROMPT = """
 You are an AI planning assistant. Your job is to analyze a user's request and created a detailed execution plan.
 
-=== AVAILABLE TOOLS ===
-{tools_schemas_json}
-
 === PLANNING INSTRUCTIONS ===
 
 When given a task, create a structured execution plan with the following JSON format:
@@ -189,6 +186,9 @@ User: "Write a short story and keep improving it until it is good enough"
 9. Add descriptions to make the plan readable and debuggable
 10. Reference variables correctly in prompts using {variable_name} syntax
 11. [IMPORTANT] Always check the function signatures and input schemas of tools before using them
+
+=== AVAILABLE TOOLS ===
+{tools_schemas_json}
 
 === OUTPUT FORMAT ===
 

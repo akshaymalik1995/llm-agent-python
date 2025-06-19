@@ -87,11 +87,13 @@ class AgentCore:
         tool_selector = KeywordToolSelector(self.tool_registry)
         relevant_tools = tool_selector.select_relevant_tools(user_query, max_tools=4)
         
-        logger.info(f"Selected tools: {json.dumps(self.tool_registry.get_all_tools_info(relevant_tools), indent=2)}")
+        logger.info(f"Selected tools: {relevant_tools}")
 
         # Format planning prompt with available tools
         tool_schemas_json = json.dumps(self.tool_registry.get_all_tools_info(relevant_tools), indent=2)
-        planning_prompt = PLANNING_PROMPT.replace("{tool_schemas_json}", tool_schemas_json)
+        planning_prompt = PLANNING_PROMPT.replace("{tools_schemas_json}", tool_schemas_json)
+
+
 
         # Construct planning messages
         messages = [
