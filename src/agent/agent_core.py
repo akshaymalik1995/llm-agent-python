@@ -9,6 +9,7 @@ from src.logging import logger
 import tiktoken
 import re
 import enum
+from src.tooling.tool_selectors import KeywordToolSelector
 
 class MessageRole(enum.Enum):
     USER = "user"
@@ -82,8 +83,14 @@ class AgentCore:
 
         logger.info("Creating execution plan...")
 
+        # Select relevant tools instead of using all tools
+        tool_selector = KeywordToolSelector(self.tool_registry)
+        relevant_tools = tool_selector.select_relevant_tools(user_query, max_tools=4)
+        
+        logger.info(f"Selected tools: {json.dumps(self.tool_registry.get_all_tools_info(relevant_tools), indent=2)}")
+
         # Format planning prompt with available tools
-        tool_schemas_json = json.dumps(self.tool_registry.get_all_tools_info(), indent=2)
+        tool_schemas_json = json.dumps(self.tool_registry.get_all_tools_info(relevant_tools), indent=2)
         planning_prompt = PLANNING_PROMPT.replace("{tool_schemas_json}", tool_schemas_json)
 
         # Construct planning messages

@@ -47,7 +47,7 @@ When given a task, create a structured execution plan with the following JSON fo
 
 2. **Tool Step**: Execute available tools
     - Use for: file operations, API calls, system commands
-    - Example: {"id": "T1", "type": "tool", "tool_name": "list_files", "arguments": {"directory": ".", "output_name": "file_list"}}
+    - Example: {"id": "T1", "type": "tool", "tool_name": "list_files", "arguments": {"path": ".", "output_name": "file_list"}}
 
 3. **Conditional Step**: Branch execution based on results
     - Use for: loop, validation, decision points
@@ -61,6 +61,8 @@ When given a task, create a structured execution plan with the following JSON fo
 
 
 === PLANNING EXAMPLES ===
+DISCLAIMER: These are example plans. They may not work with your specific tools or LLMs, but they illustrate the structure and logic of a good plan.
+Always check the function signatures and input schemas of tools before using them.
 
 1. **Simple Query**
 
@@ -95,7 +97,7 @@ User: "List all Python files in the current directory and analyze their complexi
       "type": "tool",
       "description": "Get list of files in current directory", 
       "tool_name": "list_files",
-      "arguments": {"directory": "."},
+      "arguments": {"path": ".", "pattern": "*.py"},
       "output_name": "all_files"
     },
     {
@@ -186,6 +188,7 @@ User: "Write a short story and keep improving it until it is good enough"
 8. Estimate max_iterations realistically - simple tasks: 2-5, complex: 10-20
 9. Add descriptions to make the plan readable and debuggable
 10. Reference variables correctly in prompts using {variable_name} syntax
+11. [IMPORTANT] Always check the function signatures and input schemas of tools before using them
 
 === OUTPUT FORMAT ===
 

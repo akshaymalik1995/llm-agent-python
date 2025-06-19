@@ -27,7 +27,7 @@ class KeywordToolSelector:
     
         return tool_keywords
 
-    def select_relevant_tools(self, query: str, max_tools: int = 3) -> List[dict]:
+    def select_relevant_tools(self, query: str, max_tools: int = 3) -> List[str]:
         """
         Select tools based on keyword matching.
         
@@ -59,8 +59,7 @@ class KeywordToolSelector:
             return self._get_default_tools(max_tools)
         
         return [
-            self.tool_registry.get_tool(tool_name).get_tool_info()
-            for tool_name, _ in selected_tools
+            tool_name for tool_name, _ in selected_tools
         ]
     
     def _get_default_tools(self, max_tools: int) -> List[dict]:
@@ -105,12 +104,16 @@ if __name__ == "__main__":
     for i, query in enumerate(test_queries, 1):
         print(f"\n{i}. Query: '{query}'")
         
-        selected_tools = selector.select_relevant_tools(query, max_tools=2)
+        selected_tool_names = selector.select_relevant_tools(query, max_tools=2)
         
-        if selected_tools:
+        if selected_tool_names:
             print(f"   🎯 Selected tools:")
-            for tool in selected_tools:
-                print(f"      - {tool['name']}: {tool['signature']}")
+            for tool_name in selected_tool_names:
+                tool = tool_registry.get_tool(tool_name)
+                if tool and hasattr(tool, 'signature'):
+                    print(f"     - {tool_name}: {tool.signature}")
+                else:
+                    print(f"     - {tool_name}")
         else:
             print("   ❌ No tools selected (using defaults)")
     
