@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM Agent - Planning Interface</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/json.min.js"></script>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="max-w-7xl mx-auto p-6">
+        <!-- Header -->
+        <header class="text-center mb-8">
+            <div class="flex items-center justify-center mb-4">
+                <i data-lucide="brain-circuit" class="w-12 h-12 text-blue-600 mr-4"></i>
+                <h1 class="text-4xl font-bold text-gray-900">LLM Agent Planner</h1>
+            </div>
+            <p class="text-gray-600 text-lg">Generate execution plans for complex tasks</p>
+            <div class="mt-4 inline-flex items-center px-4 py-2 bg-blue-50 text-blue-700 rounded-lg">
+                <i data-lucide="info" class="w-4 h-4 mr-2"></i>
+                <span class="text-sm">Planning-only interface - execution not included</span>
+            </div>
+        </header>
+
+        <!-- Query Input Section -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+            <label for="query" class="block text-sm font-medium text-gray-700 mb-2">
+                Enter your task description:
+            </label>
+            <div class="space-y-4">
+                <textarea 
+                    id="query" 
+                    rows="4" 
+                    class="w-full border border-gray-300 rounded-md px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                    placeholder="e.g., Write an essay on climate change, then critique and improve it twice"
+                ></textarea>
+                
+                <!-- Example queries -->
+                <div class="flex flex-wrap gap-2">
+                    <span class="text-sm text-gray-500">Examples:</span>
+                    <button class="example-btn text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded-full text-gray-700" 
+                            data-query="Write an essay on artificial intelligence, then critique and improve it twice">
+                        Essay + Improvements
+                    </button>
+                    <button class="example-btn text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded-full text-gray-700"
+                            data-query="List all Python files in the src directory and analyze their structure">
+                        File Analysis
+                    </button>
+                    <button class="example-btn text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded-full text-gray-700"
+                            data-query="Get current time and create a summary of available tools">
+                        Multi-tool Task
+                    </button>
+                </div>
+                
+                <div class="flex justify-center">
+                    <button 
+                        id="generateBtn" 
+                        class="px-8 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                        <i data-lucide="brain-circuit" class="inline w-5 h-5 mr-2"></i>
+                        Generate Execution Plan
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Results Grid -->
+        <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+            <!-- Left Column: Execution Plan -->
+            <div class="xl:col-span-2 bg-white rounded-lg shadow-md">
+                <div class="border-b border-gray-200 px-6 py-4">
+                    <h2 class="text-xl font-semibold text-gray-900 flex items-center">
+                        <i data-lucide="list-checks" class="w-5 h-5 mr-2 text-blue-600"></i>
+                        Execution Plan
+                    </h2>
+                </div>
+                <div id="planContainer" class="p-6">
+                    <div class="text-center text-gray-500 py-12">
+                        <i data-lucide="brain-circuit" class="w-16 h-16 mx-auto mb-4 text-gray-300"></i>
+                        <p class="text-lg mb-2">Ready to plan your task</p>
+                        <p class="text-sm">Enter a query above and click "Generate Execution Plan"</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column: Tools & Metadata -->
+            <div class="space-y-6">
+                <!-- Plan Metadata -->
+                <div id="metadataCard" class="bg-white rounded-lg shadow-md hidden">
+                    <div class="border-b border-gray-200 px-6 py-4">
+                        <h3 class="text-lg font-semibold text-gray-900 flex items-center">
+                            <i data-lucide="info" class="w-5 h-5 mr-2 text-green-600"></i>
+                            Plan Summary
+                        </h3>
+                    </div>
+                    <div id="metadataContent" class="p-6"></div>
+                </div>
+
+                <!-- Available Tools -->
+                <div class="bg-white rounded-lg shadow-md">
+                    <div class="border-b border-gray-200 px-6 py-4">
+                        <h3 class="text-lg font-semibold text-gray-900 flex items-center">
+                            <i data-lucide="wrench" class="w-5 h-5 mr-2 text-purple-600"></i>
+                            Available Tools
+                        </h3>
+                    </div>
+                    <div id="toolsContainer" class="p-6">
+                        <div class="text-center text-gray-500 py-4">
+                            <i data-lucide="loader" class="w-6 h-6 mx-auto mb-2 animate-spin"></i>
+                            <p class="text-sm">Loading tools...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="static/app.js"></script>
+</body>
+</html>
