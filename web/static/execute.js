@@ -122,6 +122,18 @@ class ExecutionInterface {
         const stepTypeColor = stepTypeColors[step.type] || 'bg-gray-50 border-gray-200 text-gray-800';
         const stepTypeIcon = stepTypeIcons[step.type] || 'circle';
         
+        let stepDetails = `<p class="text-sm text-gray-600">${step.description || 'No description'}</p>`;
+        
+        // Add response format display for LLM steps
+        if (step.response_format) {
+            stepDetails += `
+                <div class="mt-2 p-2 bg-blue-50 rounded text-xs">
+                    <div class="font-semibold text-blue-900 mb-1">Expected Format:</div>
+                    <code class="text-blue-800">${JSON.stringify(step.response_format, null, 2)}</code>
+                </div>
+            `;
+        }
+        
         return `
             <div id="step-${step.id}" class="step-card border border-gray-200 rounded-lg p-4 mb-4 last:mb-0">
                 <div class="flex items-start justify-between mb-3">
@@ -137,7 +149,7 @@ class ExecutionInterface {
                                     ${step.type}
                                 </span>
                             </div>
-                            <p class="text-sm text-gray-600">${step.description || 'No description'}</p>
+                            ${stepDetails}
                         </div>
                     </div>
                     <div class="step-status flex items-center">

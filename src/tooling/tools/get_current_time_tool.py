@@ -32,6 +32,13 @@ class GetCurrentTimeTool(BaseTool):
             "required": []
         }
     
+    @property
+    def response_format(self) -> dict:
+        return {
+            "status": "string",
+            "current_time": "string"
+        }
+    
     def execute(self, args: dict) -> str:
         # args is expected to be an empty dict, but we don't strictly need to check it
         # if the input_schema is clear and LLM follows it.

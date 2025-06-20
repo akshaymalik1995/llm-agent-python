@@ -81,6 +81,20 @@ class BaseTool(ABC):
         """
         pass
 
+    @property
+    @abstractmethod
+    def response_format(self) -> dict:
+        """
+        Defines the expected JSON response format for this tool.
+        
+        Returns:
+            Dictionary describing the JSON structure returned by execute()
+            
+        Example:
+            {"status": "string", "current_time": "string"}
+        """
+        pass
+
     @abstractmethod
     def execute(self, args: dict) -> str:
         """
@@ -103,8 +117,9 @@ class BaseTool(ABC):
         """
         return {
             "name": self.name,
-            # "description": self.description,
+            "description": self.description,
             "input_schema": self.input_schema,
             "keywords": self.keywords,
-            "signature": self.signature
+            "signature": self.signature,
+            "response_format": self.response_format
         }

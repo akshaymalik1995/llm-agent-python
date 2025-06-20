@@ -14,6 +14,7 @@ When given a task, create a structured execution plan with the following JSON fo
 
             // For LLM steps
             "prompt": "The exact prompt to send to the LLM",
+            "response_format": {"field1": "type", "field2": "type"}, // Expected JSON structure
             "output_name": "variable_name_for_result",
 
             // For tool steps
@@ -40,18 +41,25 @@ When given a task, create a structured execution plan with the following JSON fo
 
 1. **LLM STEP**: Direct query to language model
     - Use for: answering questions, generating content, analysis
-    - Example: {"id": "L1", "type": "llm", "prompt": "What is the capital of France?", "output_name": "capital"}
+    - Must include response_format defining expected JSON fields
+    - LLM will be instructed to respond in exactly this JSON format
+    - Example: {
+        "id": "L1", 
+        "type": "llm", 
+        "prompt": "Rate this poem from 1-10 and explain why: {poem}",
+        "response_format": {"rating": "number", "explanation": "string", "is_good": "boolean"},
+        "output_name": "poem_evaluation"
+      }
 
 2. **Tool Step**: Execute available tools
     - Use for: file operations, API calls, system commands
     - Example: {"id": "T1", "type": "tool", "tool_name": "list_files", "arguments": {"path": ".", "output_name": "file_list"}}
 
-3. **Conditional Step**: Branch execution based on LLM true/false responses
+3. **Conditional Step**: Branch execution based on JSON field values
     - Use for: loops, validation, decision points
-    - Condition must be: variable_name == "true"
-    - If true: jumps to goto_id, if false: continues to next step
-    - Requires prior LLM step that responds with only "true" or "false"
-    - Example: {"id": "C1", "type": "if", "condition": "is_good_enough == 'true'", "goto_id": "FINISH"}
+    - Condition format: "output_name.field_name operator value"
+    - Supports: ==, !=, >=, <=, >, < operators
+    - Example: {"id": "C1", "type": "if", "condition": "poem_evaluation.rating >= 8", "goto_id": "FINISH"}
 
 4. **Goto Step**: Unconditional jump (for loops)
     - Example: {"id": "LOOP", "type": "goto", "goto_id": "L2"}
@@ -128,30 +136,33 @@ User: "Write a short story and keep improving it until it is good enough"
       "type": "llm",
       "description": "Write initial short story",
       "prompt": "Write a creative short story (200-300 words) about a mysterious forest.",
-      "output_name": "story"
+      "response_format": {"story": "string", "word_count": "number"},
+      "output_name": "story_data"
     },
     {
       "id": "L2", 
       "type": "llm",
       "description": "Evaluate if story is good enough",
-      "prompt": "Is this story good enough (creative, coherent, engaging)? Respond with only 'true' or 'false': {story}",
-      "input_refs": ["story"],
-      "output_name": "is_story_ready"
+      "prompt": "Evaluate this story for creativity, coherence, and engagement: {story_data.story}",
+      "response_format": {"rating": "number", "is_ready": "boolean", "feedback": "string"},
+      "input_refs": ["story_data"],
+      "output_name": "story_evaluation"
     },
     {
       "id": "C1",
       "type": "if", 
       "description": "Check if story is ready",
-      "condition": "is_story_ready == 'true'",
+      "condition": "story_evaluation.is_ready == true",
       "goto_id": "FINISH"
     },
     {
       "id": "L3",
       "type": "llm", 
       "description": "Improve the story",
-      "prompt": "Improve this story to make it more engaging and creative: {story}",
-      "input_refs": ["story"], 
-      "output_name": "story"
+      "prompt": "Improve this story based on feedback: Story: {story_data.story} Feedback: {story_evaluation.feedback}",
+      "response_format": {"story": "string", "improvements_made": "string"},
+      "input_refs": ["story_data", "story_evaluation"], 
+      "output_name": "story_data"
     },
     {
       "id": "LOOP",
@@ -163,8 +174,8 @@ User: "Write a short story and keep improving it until it is good enough"
       "id": "FINISH",
       "type": "llm",
       "description": "Present final story",
-      "prompt": "Present the final story with a brief note about its quality: {story}",
-      "input_refs": ["story"],
+      "prompt": "Present the final story with a brief note about its quality: {story_data.story}",
+      "input_refs": ["story_data"],
       "output_name": "final_result"
     },
     {

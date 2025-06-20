@@ -80,6 +80,16 @@ class LocalLLMTool(BaseTool):
             "required": ["query"]
         }
     
+    @property
+    def response_format(self) -> dict:
+        return {
+            "status": "string",
+            "response": "string", 
+            "model_used": "string",
+            "processing": "string",
+            "message": "string"
+        }
+    
     def execute(self, args: dict) -> str:
         try:
             query = args.get("query", "").strip()

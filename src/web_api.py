@@ -67,10 +67,16 @@ def create_plan():
         if not plan_data:
             return jsonify({'error': 'Failed to create execution plan'}), 500
         
+        # Include tool information in the response
+        relevant_tools = plan_data.get('tools', [])
+        tools_info = {
+            tool_name: agent_instance.tool_registry.get_tool(tool_name).get_tool_info()
+            for tool_name in relevant_tools
+        }
+        
         return jsonify({
-            'success': True,
             'plan': plan_data,
-            'query': query
+            'tools': tools_info
         })
     
     except Exception as e:

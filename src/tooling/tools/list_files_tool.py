@@ -99,6 +99,16 @@ class ListFilesTool(BaseTool):
             "required": []
         }
     
+    @property
+    def response_format(self) -> dict:
+        return {
+            "status": "string",
+            "path": "string", 
+            "total_items": "number",
+            "truncated": "boolean",
+            "files": "array"
+        }
+    
     def execute(self, args: dict) -> str:
         try:
             # Hard limit for LLM context management

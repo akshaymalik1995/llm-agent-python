@@ -286,40 +286,46 @@ class AgentCore:
             return False
         
     def _execute_llm_step(self, step: PlanStep) -> bool:
-        """Executes an LLM step."""
+        """Executes an LLM step with JSON response format."""
         if not step.prompt:
             logger.error(f"LLM step {step.id} missing prompt")
             return False
         
         # Resolve input references in the prompt
         resolved_prompt = self._resolve_prompt_inputs(step.prompt, step.input_refs)
-
-        logger.info(f"\n\n\n\nLLM call for step {step.id}: {resolved_prompt}\n\n\n")
-
-        # Make LLM call
+        
+        # Add JSON format instruction if response_format is specified
+        if hasattr(step, 'response_format') and step.response_format:
+            json_instruction = f"\n\nRespond with ONLY a JSON object in this exact format: {json.dumps(step.response_format, indent=2)}"
+            resolved_prompt += json_instruction
+        
+        # Make LLM call with JSON enforcement
         messages = [
-            {"role": "system", "content" : settings.DEFAULT_SYSTEM_PROMPT_TEMPLATE},
+            {"role": "system", "content": settings.DEFAULT_SYSTEM_PROMPT_TEMPLATE},
             {"role": "user", "content": resolved_prompt}
         ]
-        response = self.llm_interface.get_completion(messages=messages)
-
-
-        if not response:
-            logger.error(f"Empty response from LLM for step {step.id}")
-            return False
+        response = self.llm_interface.get_completion(messages=messages, force_json=True)
         
+        # Validate JSON response against expected format
+        if hasattr(step, 'response_format') and step.response_format:
+            try:
+                json_response = json.loads(response)
+                # Optional: Validate fields match expected format
+                for field in step.response_format:
+                    if field not in json_response:
+                        logger.warning(f"Expected field '{field}' missing from LLM response")
+            except json.JSONDecodeError:
+                logger.error(f"LLM response is not valid JSON: {response}")
+                return False
+    
         # Store result
         step.result = response
         step.executed = True
-
-        # Store in outputs if output_name is specified
+    
+        # Store in outputs
         if step.output_name:
             self.current_plan.outputs[step.output_name] = response
-            logger.info(f"Stored output '{step.output_name}': {response[:100]}...")
-
-        # Add to conversation history
-        self._add_to_history(MessageRole.ASSISTANT, f"Step {step.id}: {response}")
-
+    
         return True
     
     def _execute_tool_step(self, step: PlanStep) -> bool:
@@ -450,30 +456,43 @@ class AgentCore:
         return resolved_args
     
     def _evaluate_condition(self, condition: str) -> bool:
-        """
-        Evaluates a condition string against current outputs.
-        Supports: ==, !=, >=, <=, >, < operators
-        """
+        """Evaluates conditions with JSON field access support."""
         try:
             import re
             
-            # Parse condition with regex to extract variable, operator, and value
-            pattern = r'(\w+)\s*(==|!=|>=|<=|>|<)\s*(.+)'
+            # Support both formats: "variable.field >= 8" and "variable >= 8"
+            pattern = r'(\w+(?:\.\w+)?)\s*(==|!=|>=|<=|>|<)\s*(.+)'
             match = re.match(pattern, condition)
             
             if not match:
                 logger.error(f"Invalid condition format: {condition}")
                 return False
                 
-            variable_name, operator, expected_value = match.groups()
-            expected_value = expected_value.strip().strip("'\"")  # Remove quotes
+            variable_path, operator, expected_value = match.groups()
+            expected_value = expected_value.strip().strip("'\"")
             
-            # Check if variable exists
-            if variable_name not in self.current_plan.outputs:
-                logger.error(f"Variable '{variable_name}' not found in outputs")
-                return False
-                
-            actual_value = self.current_plan.outputs[variable_name].strip()
+            # Handle JSON field access (e.g., "story_evaluation.rating")
+            if '.' in variable_path:
+                base_var, field = variable_path.split('.', 1)
+                if base_var not in self.current_plan.outputs:
+                    logger.error(f"Variable '{base_var}' not found in outputs")
+                    return False
+                    
+                try:
+                    json_data = json.loads(self.current_plan.outputs[base_var])
+                    actual_value = json_data.get(field)
+                    if actual_value is None:
+                        logger.error(f"Field '{field}' not found in {base_var}")
+                        return False
+                except json.JSONDecodeError:
+                    logger.error(f"Output '{base_var}' is not valid JSON")
+                    return False
+            else:
+                # Direct variable access (backward compatibility)
+                if variable_path not in self.current_plan.outputs:
+                    logger.error(f"Variable '{variable_path}' not found in outputs")
+                    return False
+                actual_value = self.current_plan.outputs[variable_path].strip()
             
             # Try to convert to numbers if possible
             try:

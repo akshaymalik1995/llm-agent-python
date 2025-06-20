@@ -66,6 +66,15 @@ class BrightnessControlTool(BaseTool):
             "required": ["action"]
         }
 
+    @property
+    def response_format(self) -> dict:
+        return {
+            "status": "string",
+            "action": "string",
+            "steps": "number",
+            "message": "string"
+        }
+
     def execute(self, args: dict) -> str:
         action = args.get("action")
         value = args.get("value")

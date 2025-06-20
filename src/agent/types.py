@@ -10,6 +10,7 @@ class PlanStep:
 
     # For LLM Steps
     prompt: Optional[str] = None
+    response_format: Optional[dict] = None  # ← ADD THIS LINE
 
     # For tool steps
     tool_name: Optional[str] = None

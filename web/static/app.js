@@ -119,7 +119,7 @@ class PlanningInterface {
 
             const data = await response.json();
 
-            if (data.success) {
+            if (data.plan) {  // ← Check for plan instead of success
                 // Store the plan and query for execution
                 this.currentPlan = data.plan;
                 this.currentQuery = query;
@@ -226,7 +226,17 @@ class PlanningInterface {
     }
 
     renderStepDetails(step) {
-        let details = '';
+        let details = `<p class="text-sm text-gray-600 mb-3">${step.description || 'No description'}</p>`;
+        
+        // Show response format for LLM steps
+        if (step.response_format) {
+            details += `
+                <div class="mt-3 p-3 bg-blue-50 rounded-md">
+                    <h5 class="text-xs font-semibold text-blue-900 mb-2">Expected Response Format:</h5>
+                    <pre class="text-xs text-blue-800 font-mono whitespace-pre-wrap">${JSON.stringify(step.response_format, null, 2)}</pre>
+                </div>
+            `;
+        }
         
         if (step.type === 'llm' && step.prompt) {
             details += `
