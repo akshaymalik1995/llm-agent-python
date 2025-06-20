@@ -22,7 +22,7 @@ When given a task, create a structured execution plan with the following JSON fo
             "output_name": "variable_name_for_result",
 
             // For conditional steps
-            "condition": "variable_name == 'expected_value'",
+            "condition": "variable_name == 'true'", // jumps to goto_id if true, continues to next step if false
             "goto_id": "step_to_jump_to_if_true",
 
             // For goto steps
@@ -46,9 +46,12 @@ When given a task, create a structured execution plan with the following JSON fo
     - Use for: file operations, API calls, system commands
     - Example: {"id": "T1", "type": "tool", "tool_name": "list_files", "arguments": {"path": ".", "output_name": "file_list"}}
 
-3. **Conditional Step**: Branch execution based on results
-    - Use for: loop, validation, decision points
-    - Example: {"id": "C1", "type": "if", "condition": "quality_score >= 8", "goto_id": "FINISH"}
+3. **Conditional Step**: Branch execution based on LLM true/false responses
+    - Use for: loops, validation, decision points
+    - Condition must be: variable_name == "true"
+    - If true: jumps to goto_id, if false: continues to next step
+    - Requires prior LLM step that responds with only "true" or "false"
+    - Example: {"id": "C1", "type": "if", "condition": "is_good_enough == 'true'", "goto_id": "FINISH"}
 
 4. **Goto Step**: Unconditional jump (for loops)
     - Example: {"id": "LOOP", "type": "goto", "goto_id": "L2"}
@@ -130,21 +133,21 @@ User: "Write a short story and keep improving it until it is good enough"
     {
       "id": "L2", 
       "type": "llm",
-      "description": "Evaluate story quality",
-      "prompt": "Rate this story on a scale of 1-10 for creativity, coherence, and engagement. Only respond with a number: {story}",
+      "description": "Evaluate if story is good enough",
+      "prompt": "Is this story good enough (creative, coherent, engaging)? Respond with only 'true' or 'false': {story}",
       "input_refs": ["story"],
-      "output_name": "story_rating"
+      "output_name": "is_story_ready"
     },
     {
       "id": "C1",
       "type": "if", 
-      "description": "Check if story is good enough",
-      "condition": "story_rating >= 7",
+      "description": "Check if story is ready",
+      "condition": "is_story_ready == 'true'",
       "goto_id": "FINISH"
     },
     {
       "id": "L3",
-      "type": "llm",
+      "type": "llm", 
       "description": "Improve the story",
       "prompt": "Improve this story to make it more engaging and creative: {story}",
       "input_refs": ["story"], 

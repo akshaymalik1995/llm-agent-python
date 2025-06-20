@@ -143,6 +143,13 @@ class AgentCore:
             if not isinstance(step, dict) or "id" not in step or "type" not in step:
                 return False
             
+            # In _validate_plan_structure method, add validation for conditional steps:
+            if step.get("type") == "if":
+                condition = step.get("condition", "")
+                if " == 'true'" not in condition:
+                    logger.error(f"Invalid condition format in step {step.get('id')}: {condition}")
+                    return False
+
         # TODO: Validate all input_refs are actually correct
 
         return True
@@ -398,38 +405,51 @@ class AgentCore:
 
         # If arguments contain string references to outputs, replace them
         for key, value in resolved_args.items():
-            if isinstance(value, str) and value in self.current_plan.outputs:
-                resolved_args[key] = self.current_plan.outputs[value]
+            if isinstance(value, str):
+                # Handle both direct references and template-style references
+                if value in self.current_plan.outputs:
+                    resolved_args[key] = self.current_plan.outputs[value]
+                else:
+                    # Handle {variable_name} style references
+                    for ref in input_refs or []:
+                        if ref in self.current_plan.outputs:
+                            placeholder = f"{{{ref}}}"
+                            if placeholder in value:
+                                resolved_args[key] = value.replace(placeholder, self.current_plan.outputs[ref])
         
         return resolved_args
     
     def _evaluate_condition(self, condition: str) -> bool:
         """
         Evaluates a condition string against current outputs.
+        Only supports: variable_name == 'true'
         
         Args:
-            condition: Condition string like "variable_name >= 7"
+            condition: Condition string like "is_ready == 'true'"
             
         Returns:
             Boolean result of condition evaluation
         """
 
         try:
-            # Simple condition evaluation - enhance as needed
-            # Extract variable name and operation
-            # For now, handle basic comparisons
+            # Parse condition - should be in format: variable_name == 'true'
+            if " == 'true'" not in condition:
+                logger.error(f"Invalid condition format: {condition}. Must be 'variable_name == \"true\"'")
+                return False
+                
+            variable_name = condition.replace(" == 'true'", "").strip()
             
-            # Replace output variables with their values
-
-            resolved_condition = condition
-            for output_name, output_value in self.current_plan.outputs.items():
-                resolved_condition = resolved_condition.replace(output_name, f"'{output_value}'")
-
-            logger.info(f"Evaluating condition: {resolved_condition}")
-
-            # TODO: Simple eval - in production, use a safer expression evaluator
-            result = eval(resolved_condition)
-            return bool(result)
+            # Check if variable exists in outputs
+            if variable_name not in self.current_plan.outputs:
+                logger.error(f"Variable '{variable_name}' not found in outputs")
+                return False
+                
+            # Get the value and check if it's "true"
+            output_value = self.current_plan.outputs[variable_name].strip().lower()
+            result = output_value == 'true'
+            
+            logger.info(f"Condition '{condition}' evaluated to: {result} (variable value: '{output_value}')")
+            return result
         
         except Exception as e:
             logger.error(f"Failed to evaluate condition '{condition}': {e}")
