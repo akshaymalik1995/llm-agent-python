@@ -28,7 +28,15 @@ class OpenAIInterface(BaseLLMInterface):
         super().__init__(model_name=model_name, api_key=resolved_api_key, **kwargs)
 
         try:
-            self.client = OpenAI(api_key=self.api_key)
+            base_url = kwargs.get("base_url", None)
+            if base_url:
+                print(f"Using custom OpenAI base URL: {base_url}")
+                self.client = OpenAI(api_key=self.api_key, base_url=base_url)
+            else:
+                print("Using default OpenAI base URL.")
+                self.client = OpenAI(api_key=self.api_key)
+
+            
             # You can also pass other OpenAI client options from self.config if needed
             # e.g., self.client = OpenAI(api_key=self.api_key, base_url=self.config.get("base_url"))
         except Exception as e:
