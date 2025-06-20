@@ -28,6 +28,9 @@ class AppConfig:
     DEFAULT_OPENAI_MODEL: str = "gpt-4o" # Or "gpt-3.5-turbo"
     DEFAULT_GEMINI_MODEL: str = "gemini-1.5-pro-latest" # Or other appropriate model
 
+    OLLAMA_MODEL = "tinyllama"
+    OLLAMA_ENDPOINT = "http://localhost:11434/v1"  # Default Ollama endpoint
+
     # Agent settings
     MAX_AGENT_ITERATIONS: int = 20
 
