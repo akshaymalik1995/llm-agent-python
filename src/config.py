@@ -25,8 +25,8 @@ class AppConfig:
     GEMINI_API_KEY: str | None = os.getenv("GEMINI_API_KEY")
 
     # Default LLM settings
-    DEFAULT_OPENAI_MODEL: str = "gpt-4o" # Or "gpt-3.5-turbo"
-    DEFAULT_GEMINI_MODEL: str = "gemini-1.5-pro-latest" # Or other appropriate model
+    DEFAULT_OPENAI_MODEL: str = "gpt-4o-mini" 
+    DEFAULT_GEMINI_MODEL: str = "gemini-2.0-flash" # Or other appropriate model
 
     OLLAMA_MODEL = "tinyllama"
     OLLAMA_ENDPOINT = "http://localhost:11434/v1"  # Default Ollama endpoint
