@@ -380,6 +380,19 @@ class PlanningInterface {
         this.executeBtn.disabled = true;
         this.executeBtn.innerHTML = '<i data-lucide="loader" class="inline w-4 h-4 mr-2 animate-spin"></i>Starting...';
 
+        // Show execution status
+        const statusDiv = document.createElement('div');
+        statusDiv.id = 'executionStatus';
+        statusDiv.className = 'mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg';
+        statusDiv.innerHTML = `
+            <div class="flex items-center">
+                <i data-lucide="loader" class="w-4 h-4 mr-2 animate-spin"></i>
+                <span class="text-sm text-yellow-800">Execution in progress...</span>
+            </div>
+        `;
+        
+        this.executeButtonContainer.appendChild(statusDiv);
+
         try {
             const response = await fetch('/api/execute', {
                 method: 'POST',

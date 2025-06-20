@@ -149,7 +149,9 @@ class AgentCore:
             # In _validate_plan_structure method, add validation for conditional steps:
             if step.get("type") == "if":
                 condition = step.get("condition", "")
-                if " == 'true'" not in condition:
+                # Allow various comparison operators
+                operators = [" == ", " != ", " >= ", " <= ", " > ", " < "]
+                if not any(op in condition for op in operators):
                     logger.error(f"Invalid condition format in step {step.get('id')}: {condition}")
                     return False
 
@@ -182,50 +184,52 @@ class AgentCore:
         if max_iterations is None:
             max_iterations = self.current_plan.max_iterations or settings.MAX_AGENT_ITERATIONS
 
-        logger.info(f"Executing plan with {len(steps)} steps, max iterations: {max_iterations}")
-
+        logger.info(f"Starting plan execution:")
+        logger.info(f"  - Total steps: {len(self.current_plan.steps)}")
+        logger.info(f"  - Max iterations: {max_iterations}")
+        logger.info(f"  - Step IDs: {[step.id for step in self.current_plan.steps]}")
+    
         current_iteration = 0
 
         while current_iteration < max_iterations:
             current_iteration += 1
+            
+            # This is the problem - it's treating each step as a separate iteration
+            # Instead, it should execute ALL steps in one iteration
+            
+            # Execute ALL steps in this iteration
+            while self.current_plan.current_step_index < len(self.current_plan.steps):
+                current_step = self.current_plan.steps[self.current_plan.current_step_index]
+                
+                # Skip already executed steps
+                if current_step.executed and current_step.type not in ["if", "goto"]:
+                    self.current_plan.current_step_index += 1
+                    continue
 
-            # Check if we have reached the end
-            if self.current_plan.current_step_index >= len(self.current_plan.steps):
-                logger.info("Reached end of plan")
-                break
+                logger.info(f"Iteration {current_iteration}: Executing step {current_step.id} ({current_step.type})")
+                
+                # Execute the current step
+                success = self._execute_step(current_step)
 
-            current_step = self.current_plan.steps[self.current_plan.current_step_index]
+                if not success:
+                    error_msg = f"Failed to execute step {current_step.id}"
+                    logger.error(error_msg)
+                    return error_msg
 
-            # Skip already executed steps (for jump scenarios)
-            # TODO: Understand this better later
-            if current_step.executed and current_step.type not in ["if", "goto"]:
-                self.current_plan.current_step_index += 1
-                continue
+                # Handle end step
+                if current_step.type == "end":
+                    logger.info("Execution completed successfully")
+                    return self._get_final_result()
 
-            logger.info(f"Iteration {current_iteration}: Executing step {current_step.id} ({current_step.type})")
-            print(f"Iteration {current_iteration}: Executing step {current_step.id} ({current_step.type})")
-
-            # Execute the current step
-            success = self._execute_step(current_step)
-
-            if not success:
-                error_msg = f"Failed to execute step {current_step.id}"
-                logger.error(error_msg)
-                return error_msg
-
-            # Handle end step
-            if current_step.type == "end":
-                logger.info("Execution completed successfully")
-                break
-
-            # Move to next step (unless we jumped)
-            if not self.jumped:
-                self.current_plan.current_step_index += 1
-            else:
-                self.jumped = False
-
-        # Return final result
-        return self._get_final_result()
+                # Move to next step (unless we jumped)
+                if not self.jumped:
+                    self.current_plan.current_step_index += 1
+                else:
+                    self.jumped = False
+        
+        # If we completed all steps, return the final result
+        if self.current_plan.current_step_index >= len(self.current_plan.steps):
+            return self._get_final_result()
     
     def _execute_step(self, step: PlanStep) -> bool:
         """
@@ -448,35 +452,57 @@ class AgentCore:
     def _evaluate_condition(self, condition: str) -> bool:
         """
         Evaluates a condition string against current outputs.
-        Only supports: variable_name == 'true'
-        
-        Args:
-            condition: Condition string like "is_ready == 'true'"
-            
-        Returns:
-            Boolean result of condition evaluation
+        Supports: ==, !=, >=, <=, >, < operators
         """
-
         try:
-            # Parse condition - should be in format: variable_name == 'true'
-            if " == 'true'" not in condition:
-                logger.error(f"Invalid condition format: {condition}. Must be 'variable_name == \"true\"'")
+            import re
+            
+            # Parse condition with regex to extract variable, operator, and value
+            pattern = r'(\w+)\s*(==|!=|>=|<=|>|<)\s*(.+)'
+            match = re.match(pattern, condition)
+            
+            if not match:
+                logger.error(f"Invalid condition format: {condition}")
                 return False
                 
-            variable_name = condition.replace(" == 'true'", "").strip()
+            variable_name, operator, expected_value = match.groups()
+            expected_value = expected_value.strip().strip("'\"")  # Remove quotes
             
-            # Check if variable exists in outputs
+            # Check if variable exists
             if variable_name not in self.current_plan.outputs:
                 logger.error(f"Variable '{variable_name}' not found in outputs")
                 return False
                 
-            # Get the value and check if it's "true"
-            output_value = self.current_plan.outputs[variable_name].strip().lower()
-            result = output_value == 'true'
+            actual_value = self.current_plan.outputs[variable_name].strip()
             
-            logger.info(f"Condition '{condition}' evaluated to: {result} (variable value: '{output_value}')")
+            # Try to convert to numbers if possible
+            try:
+                actual_num = float(actual_value)
+                expected_num = float(expected_value)
+                actual_value, expected_value = actual_num, expected_num
+            except ValueError:
+                # Keep as strings for string comparison
+                pass
+            
+            # Evaluate based on operator
+            if operator == "==":
+                result = actual_value == expected_value
+            elif operator == "!=":
+                result = actual_value != expected_value
+            elif operator == ">=":
+                result = actual_value >= expected_value
+            elif operator == "<=":
+                result = actual_value <= expected_value
+            elif operator == ">":
+                result = actual_value > expected_value
+            elif operator == "<":
+                result = actual_value < expected_value
+            else:
+                return False
+                
+            logger.info(f"Condition '{condition}' evaluated to: {result}")
             return result
-        
+            
         except Exception as e:
             logger.error(f"Failed to evaluate condition '{condition}': {e}")
             return False

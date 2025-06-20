@@ -163,28 +163,39 @@ class ExecutionInterface {
             this.eventSource.close();
         }
         
+        console.log('Setting up event stream for execution:', this.executionId);
         this.eventSource = new EventSource(`/api/execution/${this.executionId}/stream`);
         
         this.eventSource.onmessage = (event) => {
             try {
                 const data = JSON.parse(event.data);
+                console.log('Raw SSE data received:', event.data);
                 this.handleUpdate(data);
             } catch (error) {
                 console.error('Error parsing event data:', error);
+                console.error('Raw event data:', event.data);
             }
         };
         
         this.eventSource.onerror = (error) => {
             console.error('EventSource error:', error);
+            console.error('EventSource state:', this.eventSource.readyState);
+            
+            // Handle connection errors
+            this.handleConnectionError();
         };
         
         this.eventSource.onopen = () => {
-            console.log('EventSource connection opened');
+            console.log('EventSource connection opened successfully');
         };
     }
     
     handleUpdate(data) {
         console.log('Received update:', data);
+        
+        // Add more detailed logging to debug the issue
+        console.log('Update type:', data.type);
+        console.log('Update data:', data);
         
         switch (data.type) {
             case 'execution_started':
@@ -198,30 +209,70 @@ class ExecutionInterface {
                 break;
                 
             case 'step_completed':
+                // Only update step status, not overall execution status
                 this.updateStepStatus(data.step_id, data.success ? 'completed' : 'failed', data.result);
                 this.updateSummary();
+                
+                // Check if this was the last step (END step) but don't assume execution is complete
+                if (data.step_id && this.steps.has(data.step_id)) {
+                    const step = this.steps.get(data.step_id);
+                    if (step.type === 'end') {
+                        console.log('END step completed, but waiting for execution_completed event');
+                    }
+                }
                 break;
                 
             case 'execution_completed':
+                console.log('Execution completed event received');
                 this.updateStatus('completed');
                 this.showFinalResult(data.result);
                 this.clearCurrentStep();
-                this.eventSource.close();
+                if (this.eventSource) {
+                    this.eventSource.close();
+                }
                 break;
                 
             case 'execution_failed':
+                console.log('Execution failed event received');
                 this.updateStatus('failed');
                 this.showError(data.error);
                 this.clearCurrentStep();
-                this.eventSource.close();
+                if (this.eventSource) {
+                    this.eventSource.close();
+                }
+                break;
+                
+            case 'execution_stopped':
+                console.log('Execution stopped event received');
+                this.updateStatus('stopped');
+                this.clearCurrentStep();
+                if (this.eventSource) {
+                    this.eventSource.close();
+                }
                 break;
                 
             case 'heartbeat':
-                // Just keep connection alive
+                // Just keep connection alive - don't log to reduce noise
+                break;
+                
+            default:
+                console.warn('Unknown event type received:', data.type);
                 break;
         }
         
         this.updateDuration();
+    }
+    
+    handleConnectionError() {
+        console.error('Connection lost, attempting to reconnect...');
+        this.updateStatus('connecting');
+        
+        // Try to reconnect after a delay
+        setTimeout(() => {
+            if (this.eventSource.readyState === EventSource.CLOSED) {
+                this.setupEventStream();
+            }
+        }, 2000);
     }
     
     updateStepStatus(stepId, status, result = null) {
@@ -323,6 +374,12 @@ class ExecutionInterface {
                 icon: 'stop-circle',
                 text: 'Execution stopped',
                 animate: false
+            },
+            'connecting': {
+                color: 'bg-purple-50 text-purple-700',
+                icon: 'loader',
+                text: 'Reconnecting...',
+                animate: true
             }
         };
         
@@ -346,6 +403,12 @@ class ExecutionInterface {
         this.completedSteps.textContent = completedCount;
         this.remainingSteps.textContent = remainingCount;
         this.stepProgress.textContent = `${completedCount}/${totalCount} steps completed`;
+        
+        // Add debug logging
+        console.log(`Progress: ${completedCount}/${totalCount} steps completed`);
+        
+        // Don't automatically mark execution as complete just because all steps are done
+        // Wait for the explicit execution_completed event from the backend
     }
     
     updateDuration() {
