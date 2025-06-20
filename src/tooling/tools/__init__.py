@@ -1,3 +1,4 @@
 from .get_current_time_tool import GetCurrentTimeTool
 from .list_files_tool import ListFilesTool
 from .brightness_control_tool import BrightnessControlTool
+from .local_llm_tool import LocalLLMTool

@@ -88,6 +88,7 @@ class AgentCore:
         relevant_tools = tool_selector.select_relevant_tools(user_query, max_tools=4)
         
         logger.info(f"Selected tools: {relevant_tools}")
+        print(f"Selected tools: {relevant_tools}")
 
         # Format planning prompt with available tools
         tool_schemas_json = json.dumps(self.tool_registry.get_all_tools_info(relevant_tools), indent=2)
@@ -105,6 +106,7 @@ class AgentCore:
             # get plan from LLM
             response = self.llm_interface.get_completion(messages=messages, force_json=True)
             logger.info(f"Planning response received: {response}")
+            print(f"Planning response received: {response}")
 
             # Parse the plan
             plan_data = json.loads(response.strip())
@@ -191,6 +193,7 @@ class AgentCore:
                 continue
 
             logger.info(f"Iteration {current_iteration}: Executing step {current_step.id} ({current_step.type})")
+            print(f"Iteration {current_iteration}: Executing step {current_step.id} ({current_step.type})")
 
             # Execute the current step
             success = self._execute_step(current_step)
@@ -254,7 +257,7 @@ class AgentCore:
         # Resolve input references in the prompt
         resolved_prompt = self._resolve_prompt_inputs(step.prompt, step.input_refs)
 
-        logger.info(f"LLM call for step {step.id}: {resolved_prompt[:100]}...")
+        logger.info(f"\n\n\n\nLLM call for step {step.id}: {resolved_prompt}\n\n\n")
 
         # Make LLM call
         messages = [
