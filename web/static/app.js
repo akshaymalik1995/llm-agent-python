@@ -3,11 +3,17 @@ class PlanningInterface {
         this.initializeElements();
         this.loadAvailableTools();
         this.setupEventListeners();
+        
+        // Add these properties to store current plan
+        this.currentPlan = null;
+        this.currentQuery = null;
     }
 
     initializeElements() {
         this.queryInput = document.getElementById('query');
         this.generateBtn = document.getElementById('generateBtn');
+        this.executeBtn = document.getElementById('executeBtn');
+        this.executeButtonContainer = document.getElementById('executeButtonContainer');
         this.planContainer = document.getElementById('planContainer');
         this.toolsContainer = document.getElementById('toolsContainer');
         this.metadataCard = document.getElementById('metadataCard');
@@ -20,10 +26,15 @@ class PlanningInterface {
     setupEventListeners() {
         this.generateBtn.addEventListener('click', () => this.generatePlan());
         
+        // Add execute button event listener
+        this.executeBtn.addEventListener('click', () => this.startExecution());
+        
         // Example query buttons
         document.querySelectorAll('.example-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 this.queryInput.value = btn.dataset.query;
+                // Hide execute button when changing query
+                this.executeButtonContainer.classList.add('hidden');
             });
         });
 
@@ -32,6 +43,11 @@ class PlanningInterface {
             if (e.key === 'Enter' && e.ctrlKey) {
                 this.generatePlan();
             }
+        });
+        
+        // Hide execute button when user starts typing new query
+        this.queryInput.addEventListener('input', () => {
+            this.executeButtonContainer.classList.add('hidden');
         });
     }
 
@@ -80,6 +96,9 @@ class PlanningInterface {
         this.generateBtn.disabled = true;
         this.generateBtn.innerHTML = '<i data-lucide="loader" class="inline w-5 h-5 mr-2 animate-spin"></i>Generating Plan...';
         
+        // Hide execute button while generating new plan
+        this.executeButtonContainer.classList.add('hidden');
+        
         this.planContainer.innerHTML = `
             <div class="text-center text-blue-600 py-12">
                 <i data-lucide="brain-circuit" class="w-16 h-16 mx-auto mb-4 animate-pulse"></i>
@@ -101,8 +120,18 @@ class PlanningInterface {
             const data = await response.json();
 
             if (data.success) {
+                // Store the plan and query for execution
+                this.currentPlan = data.plan;
+                this.currentQuery = query;
+                
                 this.displayPlan(data.plan, query);
                 this.displayMetadata(data.plan);
+                
+                // Show execute button after successful plan generation
+                this.executeButtonContainer.classList.remove('hidden');
+                
+                // Add a subtle notification that plan is ready for execution
+                this.showPlanReadyNotification();
             } else {
                 this.showError(data.error || 'Failed to generate plan');
             }
@@ -312,6 +341,73 @@ class PlanningInterface {
         `;
         this.metadataCard.classList.add('hidden');
         lucide.createIcons();
+    }
+
+    showPlanReadyNotification() {
+        // Create a temporary notification
+        const notification = document.createElement('div');
+        notification.className = 'fixed top-4 right-4 bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded-lg shadow-lg z-50';
+        notification.innerHTML = `
+            <div class="flex items-center">
+                <i data-lucide="check-circle" class="w-5 h-5 mr-2"></i>
+                <span>Plan ready for execution!</span>
+            </div>
+        `;
+        
+        document.body.appendChild(notification);
+        lucide.createIcons();
+        
+        // Auto-remove after 3 seconds
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.parentNode.removeChild(notification);
+            }
+        }, 3000);
+    }
+
+    async startExecution() {
+        if (!this.currentPlan) {
+            this.showError('No plan available for execution');
+            return;
+        }
+
+        // Confirm execution with user
+        const confirmed = confirm('Are you ready to execute this plan? This will start the actual execution process.');
+        if (!confirmed) {
+            return;
+        }
+
+        this.executeBtn.disabled = true;
+        this.executeBtn.innerHTML = '<i data-lucide="loader" class="inline w-4 h-4 mr-2 animate-spin"></i>Starting...';
+
+        try {
+            const response = await fetch('/api/execute', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    plan: this.currentPlan,
+                    query: this.currentQuery
+                })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                // Redirect to execution page with execution ID
+                window.location.href = `/execute.html?id=${data.execution_id}`;
+            } else {
+                this.showError(data.error || 'Failed to start execution');
+            }
+        } catch (error) {
+            console.error('Error starting execution:', error);
+            this.showError('Network error occurred while starting execution');
+        } finally {
+            this.executeBtn.disabled = false;
+            this.executeBtn.innerHTML = '<i data-lucide="play" class="inline w-4 h-4 mr-2"></i>Execute Plan';
+            lucide.createIcons();
+        }
     }
 }
 

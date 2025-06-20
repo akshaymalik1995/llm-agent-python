@@ -7,7 +7,7 @@ import subprocess
 import json
 from typing import List
 from src.tooling.base_tool import BaseTool
-from src.logging import logger
+from src.custom_logging import logger
 
 DEFAULT_BRIGHTNESS_STEP = 2  # Default step for brightness adjustment
 DELAY_BETWEEN_STEPS = 0.1  # Delay between key presses in seconds

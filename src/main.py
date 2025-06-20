@@ -4,7 +4,7 @@ from src.llm_interface.openai_interface import OpenAIInterface
 from src.tooling.tool_registry import ToolRegistry
 from src.tooling.tools import GetCurrentTimeTool, ListFilesTool, BrightnessControlTool, LocalLLMTool
 from src.agent.agent_core import AgentCore
-from src.logging import logger
+from src.custom_logging import logger
 
 def run_agent(query: str):
     """

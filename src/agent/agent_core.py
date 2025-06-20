@@ -5,11 +5,11 @@ from src.config import settings
 from src.agent.types import PlanStep, ExecutionPlan
 from src.prompts.planning_prompt import PLANNING_PROMPT
 from typing import Optional, Any
-from src.logging import logger
+from src.custom_logging import logger
 import tiktoken
-import re
 import enum
 from src.tooling.tool_selectors import KeywordToolSelector
+from datetime import datetime
 
 class MessageRole(enum.Enum):
     USER = "user"
@@ -22,13 +22,15 @@ class MessageDict:
         self.content = content
 
 class AgentCore:
-    def __init__(self, llm_interface: BaseLLMInterface, tool_registry: ToolRegistry):
+    def __init__(self, llm_interface: BaseLLMInterface, tool_registry: ToolRegistry, step_callback=None):
         """
         Initializes the AI Agent with planning-based execution.
 
         Args:
             llm_interface: An object responsible for interacting with the LLM.
             tool_registry: An instance of ToolRegistry containing available tools.
+            step_callback: Optional callback function for step execution updates.
+                          Should accept (step_id, event_type, data) parameters.
         """
         self.llm_interface = llm_interface
         self.tool_registry = tool_registry
@@ -43,6 +45,7 @@ class AgentCore:
         # Execution state
         self.current_plan: Optional[ExecutionPlan] = None
         self.jumped = False # Flag for tracking jumps in plan execution
+        self.step_callback = step_callback  # Add this line
 
     def execute_task(self, user_query:str, max_iterations: Optional[int] = None) -> str:
         """
@@ -235,24 +238,47 @@ class AgentCore:
             True if successful, False otherwise
         """
 
+        # Notify callback that step is starting
+        self._notify_callback(step.id, 'started', {
+            'step_type': step.type,
+            'description': step.description
+        })
+
         try:
             if step.type == "llm":
-                return self._execute_llm_step(step)
+                success = self._execute_llm_step(step)
             elif step.type == "tool":
-                return self._execute_tool_step(step)
+                success = self._execute_tool_step(step)
             elif step.type == "if":
-                return self._execute_if_step(step)
+                success = self._execute_if_step(step)
             elif step.type == "goto":
-                return self._execute_goto_step(step)
+                success = self._execute_goto_step(step)
             elif step.type == "end":
                 step.executed = True
-                return True
+                success = True
             else:
                 logger.error(f"Unknown step type: {step.type}")
-                return False
+                success = False
+            
+            # Notify callback of completion
+            event_type = 'completed' if success else 'failed'
+            self._notify_callback(step.id, event_type, {
+                'success': success,
+                'result': getattr(step, 'result', None),
+                'executed': getattr(step, 'executed', False)
+            })
+            
+            return success
             
         except Exception as e:
             logger.error(f"Error executing step {step.id}: {e}")
+            
+            # Notify callback of failure
+            self._notify_callback(step.id, 'failed', {
+                'success': False,
+                'error': str(e)
+            })
+            
             return False
         
     def _execute_llm_step(self, step: PlanStep) -> bool:
@@ -530,5 +556,83 @@ class AgentCore:
             "outputs": dict(self.current_plan.outputs),
             "reasoning": self.current_plan.reasoning
         }
+    
+    def set_step_callback(self, callback):
+        """
+        Set or update the step callback function.
+        
+        Args:
+            callback: Function that accepts (step_id, event_type, data) parameters
+        """
+        self.step_callback = callback
+
+    def _notify_callback(self, step_id: str, event_type: str, data: dict = None):
+        """
+        Notify callback if it exists.
+        
+        Args:
+            step_id: ID of the step
+            event_type: Type of event ('started', 'completed', 'failed')
+            data: Additional event data
+        """
+        if self.step_callback:
+            try:
+                self.step_callback(step_id, event_type, data or {})
+            except Exception as e:
+                logger.error(f"Error in step callback: {e}")
+
+    def execute_plan_with_callback(self, plan_data: dict, callback, max_iterations: Optional[int] = None) -> str:
+        """
+        Execute a plan with step-by-step callbacks.
+        
+        Args:
+            plan_data: The plan dictionary from planning phase
+            callback: Function that accepts (step_id, event_type, data) parameters
+            max_iterations: Override for maximum iterations
+            
+        Returns:
+            Final execution result
+        """
+        # Set the callback
+        self.step_callback = callback
+        
+        # Notify execution started
+        if callback:
+            try:
+                callback('execution', 'started', {
+                    'plan': plan_data,
+                    'started_at': datetime.now().isoformat()
+                })
+            except Exception as e:
+                logger.error(f"Error in execution callback: {e}")
+        
+        try:
+            # Execute the plan
+            result = self._execute_plan(plan_data, max_iterations)
+            
+            # Notify execution completed
+            if callback:
+                try:
+                    callback('execution', 'completed', {
+                        'result': result,
+                        'completed_at': datetime.now().isoformat()
+                    })
+                except Exception as e:
+                    logger.error(f"Error in execution callback: {e}")
+            
+            return result
+            
+        except Exception as e:
+            # Notify execution failed
+            if callback:
+                try:
+                    callback('execution', 'failed', {
+                        'error': str(e),
+                        'failed_at': datetime.now().isoformat()
+                    })
+                except Exception as e:
+                    logger.error(f"Error in execution callback: {e}")
+            
+            raise  # Re-raise the exception
 
 
