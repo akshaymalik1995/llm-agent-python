@@ -304,6 +304,8 @@ class AgentCore:
             {"role": "system", "content": settings.DEFAULT_SYSTEM_PROMPT_TEMPLATE},
             {"role": "user", "content": resolved_prompt}
         ]
+
+        logger(f"Messages for step: {step.id} - \n {messages}")
         response = self.llm_interface.get_completion(messages=messages, force_json=True)
         
         # Validate JSON response against expected format

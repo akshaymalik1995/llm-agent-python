@@ -29,7 +29,7 @@ execution_queues: Dict[str, queue.Queue] = {}
 
 def initialize_agent():
     global agent_instance
-    if not settings.OPENAI_API_KEY:
+    if not settings.OPENAI_API_KEY: # TODO: Perhaps, we does not need to check it here.
         raise ValueError("OPENAI_API_KEY not found")
     
     llm_interface = OpenAIInterface(
@@ -38,6 +38,7 @@ def initialize_agent():
     )
     
     tool_registry = ToolRegistry()
+    # TODO: I shall find a way to make the tools get registered automatically or at once
     tool_registry.register_tool(GetCurrentTimeTool())
     tool_registry.register_tool(ListFilesTool())
     tool_registry.register_tool(BrightnessControlTool())
@@ -61,7 +62,7 @@ def create_plan():
         if not agent_instance:
             initialize_agent()
 
-        # Create execution plan only (don't execute)
+        # Create execution plan only
         plan_data = agent_instance._create_execution_plan(query)
 
         if not plan_data:
@@ -244,6 +245,7 @@ def execute_plan_with_updates(execution_id: str, plan_data: dict):
                         **data
                     })
                 elif event_type in ['completed', 'failed']:
+                    # On completion or failed, the status of all steps needs to be updated
                     step_result = {
                         'step_id': step_id,
                         'success': data.get('success', False),
